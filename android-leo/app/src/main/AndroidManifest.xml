@@ -110,6 +110,22 @@
             android:screenOrientation="portrait"
             android:label="Leo Surveillance" />
 
+        <!-- ── SETTINGS ACTIVITY ── -->
+        <activity android:name=".SettingsActivity" android:exported="false"
+            android:screenOrientation="portrait"
+            android:label="Settings" />
+
+        <!-- ── SCHEDULE ACTIVITY ── -->
+        <activity android:name=".ScheduleActivity" android:exported="false"
+            android:screenOrientation="portrait"
+            android:label="Scheduled Tasks" />
+
+        <!-- ── SCHEDULE RECEIVER ── -->
+        <receiver android:name=".schedule.ScheduleReceiver" android:exported="false" />
+
+        <!-- ── SCHEDULE SERVICE ── -->
+        <service android:name=".schedule.ScheduleService" android:exported="false" />
+
         <!-- ── DYNAMIC ISLAND OVERLAY (existing) ── -->
         <service
             android:name=".overlay.OverlayService"

@@ -4,50 +4,74 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.shslab.leo.network.ProviderRegistry
 
 /**
- * ══════════════════════════════════════════
- *  LEO SECURITY VAULT — SHS LAB
- *  AES-256 GCM encrypted key storage.
- *  All AI credentials live exclusively here.
- * ══════════════════════════════════════════
+ * ═══════════════════════════════════════════════════════════════
+ *  LEO SECURITY VAULT v2 — Dynamic Provider Support
+ *
+ *  - 100+ providers via ProviderRegistry
+ *  - Per-provider API key, endpoint, model
+ *  - Custom providers (user-defined)
+ *  - Personalization, Behavior, Memory settings
+ *  - Theme, Color, Notification settings
+ *  - GGUF model paths for offline use
+ * ═══════════════════════════════════════════════════════════════
  */
 object SecurityManager {
 
     private const val PREFS_FILE = "leo_vault"
 
-    // ── Vault Keys ──
-    const val KEY_OPENROUTER_API    = "openrouter_api_key"
-    const val KEY_OPENROUTER_ENDPOINT = "openrouter_endpoint"
-    const val KEY_OPENROUTER_MODEL  = "openrouter_model"
-
-    const val KEY_GEMINI_API        = "gemini_api_key"
-    const val KEY_GEMINI_ENDPOINT   = "gemini_endpoint"
-    const val KEY_GEMINI_MODEL      = "gemini_model"
-
-    const val KEY_CLAUDE_API        = "claude_api_key"
-    const val KEY_CLAUDE_ENDPOINT   = "claude_endpoint"
-    const val KEY_CLAUDE_MODEL      = "claude_model"
-
-    const val KEY_OPENAI_API        = "openai_api_key"
-    const val KEY_OPENAI_ENDPOINT   = "openai_endpoint"
-    const val KEY_OPENAI_MODEL      = "openai_model"
-
-    const val KEY_GITHUB_TOKEN      = "github_token"
+    // ── Active Provider ──
     const val KEY_ACTIVE_PROVIDER   = "active_ai_provider"
 
-    // Defaults
-    private const val DEFAULT_OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-    private const val DEFAULT_GEMINI_ENDPOINT     = "https://generativelanguage.googleapis.com/v1beta/models"
-    private const val DEFAULT_CLAUDE_ENDPOINT     = "https://api.anthropic.com/v1/messages"
-    private const val DEFAULT_OPENAI_ENDPOINT     = "https://api.openai.com/v1/chat/completions"
+    // ── Per-provider storage (dynamic) ──
+    // Format: "provider_<id>_api_key", "provider_<id>_endpoint", "provider_<id>_model"
+    private fun providerKey(providerId: String, field: String) = "provider_${providerId}_$field"
+
+    // ── GitHub ──
+    const val KEY_GITHUB_TOKEN      = "github_token"
+
+    // ── Agent Identity ──
+    private const val KEY_AGENT_NAME = "agent_name"
+    private const val KEY_USER_NAME = "user_name"
+
+    // ── Personalization & Behavior ──
+    private const val KEY_PERSONALIZATION = "personalization"
+    private const val KEY_BEHAVIOR = "behavior"
+
+    // ── Memory ──
+    private const val KEY_MEMORY_ENABLED = "memory_enabled"
+
+    // ── Theme ──
+    private const val KEY_THEME = "theme"  // "light", "dark", "system"
+    private const val KEY_USER_MSG_COLOR = "user_msg_color"
+    private const val KEY_AGENT_MSG_COLOR = "agent_msg_color"
+
+    // ── General ──
+    private const val KEY_APP_LANGUAGE = "app_language"
+    private const val KEY_TOOLS_ENABLED = "tools_enabled"
+
+    // ── Notifications ──
+    private const val KEY_NOTIF_MESSAGES = "notif_messages"
+    private const val KEY_NOTIF_WORK = "notif_work"
+    private const val KEY_NOTIF_TASKS = "notif_tasks"
+    private const val KEY_NOTIF_REMINDERS = "notif_reminders"
+
+    // ── Voice / TTS ──
+    private const val KEY_VOICE_ENABLED = "voice_enabled"
+    private const val KEY_TTS_ENABLED = "tts_enabled"
+
+    // ── GGUF ──
+    private const val KEY_GGUF_MODEL_PATH = "gguf_model_path"
+    private const val KEY_GGUF_MODEL_NAME = "gguf_model_name"
+
+    // ── Rate Limit Awareness ──
+    private const val KEY_RATE_LIMIT_AWARE = "rate_limit_aware"
 
     @Volatile
     private var prefs: SharedPreferences? = null
 
-    /**
-     * Initialize the encrypted vault. Call once in Application.onCreate().
-     */
     fun init(context: Context) {
         if (prefs != null) return
         synchronized(this) {
@@ -62,23 +86,28 @@ object SecurityManager {
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
-            // Seed defaults on first run
             seedDefaults()
         }
     }
 
     private fun seedDefaults() {
         val p = prefs ?: return
-        if (!p.contains(KEY_OPENROUTER_ENDPOINT))
-            p.edit().putString(KEY_OPENROUTER_ENDPOINT, DEFAULT_OPENROUTER_ENDPOINT).apply()
-        if (!p.contains(KEY_GEMINI_ENDPOINT))
-            p.edit().putString(KEY_GEMINI_ENDPOINT, DEFAULT_GEMINI_ENDPOINT).apply()
-        if (!p.contains(KEY_CLAUDE_ENDPOINT))
-            p.edit().putString(KEY_CLAUDE_ENDPOINT, DEFAULT_CLAUDE_ENDPOINT).apply()
-        if (!p.contains(KEY_OPENAI_ENDPOINT))
-            p.edit().putString(KEY_OPENAI_ENDPOINT, DEFAULT_OPENAI_ENDPOINT).apply()
         if (!p.contains(KEY_ACTIVE_PROVIDER))
             p.edit().putString(KEY_ACTIVE_PROVIDER, "openrouter").apply()
+        if (!p.contains(KEY_AGENT_NAME))
+            p.edit().putString(KEY_AGENT_NAME, "Leo").apply()
+        if (!p.contains(KEY_THEME))
+            p.edit().putString(KEY_THEME, "dark").apply()
+        if (!p.contains(KEY_MEMORY_ENABLED))
+            p.edit().putBoolean(KEY_MEMORY_ENABLED, true).apply()
+        if (!p.contains(KEY_TOOLS_ENABLED))
+            p.edit().putBoolean(KEY_TOOLS_ENABLED, true).apply()
+        if (!p.contains(KEY_RATE_LIMIT_AWARE))
+            p.edit().putBoolean(KEY_RATE_LIMIT_AWARE, true).apply()
+        if (!p.contains(KEY_USER_MSG_COLOR))
+            p.edit().putString(KEY_USER_MSG_COLOR, "#1A1A2E").apply()
+        if (!p.contains(KEY_AGENT_MSG_COLOR))
+            p.edit().putString(KEY_AGENT_MSG_COLOR, "#16213E").apply()
     }
 
     fun store(key: String, value: String) {
@@ -89,66 +118,215 @@ object SecurityManager {
         return prefs?.getString(key, default) ?: default
     }
 
+    fun storeBool(key: String, value: Boolean) {
+        prefs?.edit()?.putBoolean(key, value)?.apply()
+    }
+
+    fun retrieveBool(key: String, default: Boolean = false): Boolean {
+        return prefs?.getBoolean(key, default) ?: default
+    }
+
     fun delete(key: String) {
         prefs?.edit()?.remove(key)?.apply()
     }
 
-    // ── Convenience accessors ──
+    // ═══════════════════════════════════════════════════════════
+    //  Active Provider
+    // ═══════════════════════════════════════════════════════════
 
     fun getActiveProvider(): String = retrieve(KEY_ACTIVE_PROVIDER, "openrouter")
 
-    fun getActiveApiKey(): String = when (getActiveProvider()) {
-        "gemini"  -> retrieve(KEY_GEMINI_API)
-        "claude"  -> retrieve(KEY_CLAUDE_API)
-        "openai"  -> retrieve(KEY_OPENAI_API)
-        else      -> retrieve(KEY_OPENROUTER_API)
+    fun setActiveProvider(providerId: String) {
+        store(KEY_ACTIVE_PROVIDER, providerId)
     }
 
-    fun getActiveEndpoint(): String = when (getActiveProvider()) {
-        "gemini"  -> retrieve(KEY_GEMINI_ENDPOINT, DEFAULT_GEMINI_ENDPOINT)
-        "claude"  -> retrieve(KEY_CLAUDE_ENDPOINT, DEFAULT_CLAUDE_ENDPOINT)
-        "openai"  -> retrieve(KEY_OPENAI_ENDPOINT, DEFAULT_OPENAI_ENDPOINT)
-        else      -> retrieve(KEY_OPENROUTER_ENDPOINT, DEFAULT_OPENROUTER_ENDPOINT)
+    fun getActiveApiKey(): String {
+        val provider = getActiveProvider()
+        // Check custom provider key first
+        val key = retrieve(providerKey(provider, "api_key"), "")
+        if (key.isNotBlank()) return key
+        // Fall back to legacy keys
+        return when (provider) {
+            "gemini" -> retrieve("gemini_api_key", "")
+            "claude", "anthropic" -> retrieve("claude_api_key", "")
+            "openai" -> retrieve("openai_api_key", "")
+            "openrouter" -> retrieve("openrouter_api_key", "")
+            else -> retrieve(providerKey(provider, "api_key"), "")
+        }
     }
 
-    fun getActiveModel(): String = when (getActiveProvider()) {
-        "gemini"  -> retrieve(KEY_GEMINI_MODEL, "gemini-pro")
-        "claude"  -> retrieve(KEY_CLAUDE_MODEL, "claude-3-haiku-20240307")
-        "openai"  -> retrieve(KEY_OPENAI_MODEL, "gpt-4o-mini")
-        else      -> retrieve(KEY_OPENROUTER_MODEL, "mistralai/mistral-7b-instruct")
+    fun getActiveEndpoint(): String {
+        val provider = getActiveProvider()
+        val providerConfig = ProviderRegistry.getById(provider)
+        val default = providerConfig?.endpoint ?: ""
+        return retrieve(providerKey(provider, "endpoint"), default)
     }
+
+    fun getActiveModel(): String {
+        val provider = getActiveProvider()
+        val providerConfig = ProviderRegistry.getById(provider)
+        val default = providerConfig?.defaultModel ?: ""
+        return retrieve(providerKey(provider, "model"), default)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Per-provider config
+    // ═══════════════════════════════════════════════════════════
+
+    fun setProviderConfig(providerId: String, apiKey: String, endpoint: String, model: String) {
+        val editor = prefs?.edit()
+        editor?.putString(providerKey(providerId, "api_key"), apiKey)
+        editor?.putString(providerKey(providerId, "endpoint"), endpoint)
+        editor?.putString(providerKey(providerId, "model"), model)
+        editor?.apply()
+    }
+
+    fun getProviderApiKey(providerId: String): String = retrieve(providerKey(providerId, "api_key"), "")
+    fun getProviderEndpoint(providerId: String): String {
+        val config = ProviderRegistry.getById(providerId)
+        return retrieve(providerKey(providerId, "endpoint"), config?.endpoint ?: "")
+    }
+    fun getProviderModel(providerId: String): String {
+        val config = ProviderRegistry.getById(providerId)
+        return retrieve(providerKey(providerId, "model"), config?.defaultModel ?: "")
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Agent Identity
+    // ═══════════════════════════════════════════════════════════
+
+    fun setAgentName(name: String) {
+        store(KEY_AGENT_NAME, name.trim().ifEmpty { "Leo" })
+    }
+
+    fun getAgentName(): String = retrieve(KEY_AGENT_NAME, "Leo")
+
+    fun setUserName(name: String) {
+        store(KEY_USER_NAME, name.trim())
+    }
+
+    fun getUserName(): String = retrieve(KEY_USER_NAME, "")
+
+    // ═══════════════════════════════════════════════════════════
+    //  Personalization & Behavior
+    // ═══════════════════════════════════════════════════════════
+
+    fun setPersonalization(text: String) {
+        store(KEY_PERSONALIZATION, text)
+    }
+
+    fun getPersonalization(): String = retrieve(KEY_PERSONALIZATION, "")
+
+    fun setBehavior(text: String) {
+        store(KEY_BEHAVIOR, text)
+    }
+
+    fun getBehavior(): String = retrieve(KEY_BEHAVIOR, "")
+
+    // ═══════════════════════════════════════════════════════════
+    //  Memory
+    // ═══════════════════════════════════════════════════════════
+
+    fun setMemoryEnabled(enabled: Boolean) {
+        storeBool(KEY_MEMORY_ENABLED, enabled)
+    }
+
+    fun isMemoryEnabled(): Boolean = retrieveBool(KEY_MEMORY_ENABLED, true)
+
+    // ═══════════════════════════════════════════════════════════
+    //  Theme
+    // ═══════════════════════════════════════════════════════════
+
+    fun setTheme(theme: String) {
+        store(KEY_THEME, theme)
+    }
+
+    fun getTheme(): String = retrieve(KEY_THEME, "dark")
+
+    fun setUserMsgColor(color: String) {
+        store(KEY_USER_MSG_COLOR, color)
+    }
+
+    fun getUserMsgColor(): String = retrieve(KEY_USER_MSG_COLOR, "#1A1A2E")
+
+    fun setAgentMsgColor(color: String) {
+        store(KEY_AGENT_MSG_COLOR, color)
+    }
+
+    fun getAgentMsgColor(): String = retrieve(KEY_AGENT_MSG_COLOR, "#16213E")
+
+    // ═══════════════════════════════════════════════════════════
+    //  General
+    // ═══════════════════════════════════════════════════════════
+
+    fun setAppLanguage(lang: String) {
+        store(KEY_APP_LANGUAGE, lang)
+    }
+
+    fun getAppLanguage(): String = retrieve(KEY_APP_LANGUAGE, "en")
+
+    fun setToolsEnabled(enabled: Boolean) {
+        storeBool(KEY_TOOLS_ENABLED, enabled)
+    }
+
+    fun isToolsEnabled(): Boolean = retrieveBool(KEY_TOOLS_ENABLED, true)
+
+    // ═══════════════════════════════════════════════════════════
+    //  Notifications
+    // ═══════════════════════════════════════════════════════════
+
+    fun setNotifMessages(enabled: Boolean) = storeBool(KEY_NOTIF_MESSAGES, enabled)
+    fun isNotifMessagesEnabled(): Boolean = retrieveBool(KEY_NOTIF_MESSAGES, true)
+
+    fun setNotifWork(enabled: Boolean) = storeBool(KEY_NOTIF_WORK, enabled)
+    fun isNotifWorkEnabled(): Boolean = retrieveBool(KEY_NOTIF_WORK, true)
+
+    fun setNotifTasks(enabled: Boolean) = storeBool(KEY_NOTIF_TASKS, enabled)
+    fun isNotifTasksEnabled(): Boolean = retrieveBool(KEY_NOTIF_TASKS, true)
+
+    fun setNotifReminders(enabled: Boolean) = storeBool(KEY_NOTIF_REMINDERS, enabled)
+    fun isNotifRemindersEnabled(): Boolean = retrieveBool(KEY_NOTIF_REMINDERS, true)
+
+    // ═══════════════════════════════════════════════════════════
+    //  Voice / TTS
+    // ═══════════════════════════════════════════════════════════
+
+    fun setVoiceEnabled(enabled: Boolean) = storeBool(KEY_VOICE_ENABLED, enabled)
+    fun isVoiceEnabled(): Boolean = retrieveBool(KEY_VOICE_ENABLED, true)
+
+    fun setTTSEnabled(enabled: Boolean) = storeBool(KEY_TTS_ENABLED, enabled)
+    fun isTTSEnabled(): Boolean = retrieveBool(KEY_TTS_ENABLED, false)
+
+    // ═══════════════════════════════════════════════════════════
+    //  GGUF (Offline Models)
+    // ═══════════════════════════════════════════════════════════
+
+    fun setGgufModelPath(path: String) {
+        store(KEY_GGUF_MODEL_PATH, path)
+    }
+
+    fun getGgufModelPath(): String = retrieve(KEY_GGUF_MODEL_PATH, "")
+
+    fun setGgufModelName(name: String) {
+        store(KEY_GGUF_MODEL_NAME, name)
+    }
+
+    fun getGgufModelName(): String = retrieve(KEY_GGUF_MODEL_NAME, "")
+
+    // ═══════════════════════════════════════════════════════════
+    //  Rate Limit Awareness
+    // ═══════════════════════════════════════════════════════════
+
+    fun setRateLimitAware(enabled: Boolean) = storeBool(KEY_RATE_LIMIT_AWARE, enabled)
+    fun isRateLimitAware(): Boolean = retrieveBool(KEY_RATE_LIMIT_AWARE, true)
+
+    // ═══════════════════════════════════════════════════════════
+    //  GitHub
+    // ═══════════════════════════════════════════════════════════
 
     fun getGitHubToken(): String = retrieve(KEY_GITHUB_TOKEN)
 
-    // ── Agent Name (custom) ────────────────────────────
-    private const val KEY_AGENT_NAME = "agent_name"
-    fun setAgentName(name: String) {
-        prefs?.edit()?.putString(KEY_AGENT_NAME, name.trim().ifEmpty { "Leo" })?.apply()
-    }
-    fun getAgentName(): String = prefs?.getString(KEY_AGENT_NAME, "Leo") ?: "Leo"
-
-    // ── Dark / Light Mode ──────────────────────────────
-    private const val KEY_DARK_MODE = "dark_mode"
-    fun setDarkMode(enabled: Boolean) {
-        prefs?.edit()?.putBoolean(KEY_DARK_MODE, enabled)?.apply()
-    }
-    fun isDarkMode(): Boolean = prefs?.getBoolean(KEY_DARK_MODE, true) ?: true
-
-    // ── Voice Input (STT) ──────────────────────────────
-    private const val KEY_VOICE_ENABLED = "voice_enabled"
-    fun setVoiceEnabled(enabled: Boolean) {
-        prefs?.edit()?.putBoolean(KEY_VOICE_ENABLED, enabled)?.apply()
-    }
-    fun isVoiceEnabled(): Boolean = prefs?.getBoolean(KEY_VOICE_ENABLED, true) ?: true
-
-    // ── TTS (Voice Output) ─────────────────────────────
-    private const val KEY_TTS_ENABLED = "tts_enabled"
-    fun setTTSEnabled(enabled: Boolean) {
-        prefs?.edit()?.putBoolean(KEY_TTS_ENABLED, enabled)?.apply()
-    }
-    fun isTTSEnabled(): Boolean = prefs?.getBoolean(KEY_TTS_ENABLED, false) ?: false
-
-    /** Wipe all vault data (emergency reset) */
+    /** Wipe all vault data */
     fun nukeVault() {
         prefs?.edit()?.clear()?.apply()
     }

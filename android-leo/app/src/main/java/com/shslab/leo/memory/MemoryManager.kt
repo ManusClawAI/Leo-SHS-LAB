@@ -1,121 +1,115 @@
 package com.shslab.leo.memory
 
 import android.content.Context
-import com.shslab.leo.core.Logger
-import kotlin.math.ln
-import kotlin.math.sqrt
+import android.content.SharedPreferences
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
- * ══════════════════════════════════════════
- *  LEO MEMORY MANAGER — SHS LAB
+ * ═══════════════════════════════════════════════════════════════
+ *  LEO MEMORY MANAGER v2
  *
- *  Lightweight RAG using TF-IDF + cosine similarity.
- *  No native embeddings needed → 2GB RAM safe.
- *  Max ~800 active memories kept hot.
- * ══════════════════════════════════════════
+ *  - User preferences store
+ *  - ON/OFF toggle
+ *  - Manual add memories
+ *  - Auto-save from phrases like "I like this", "remember this"
+ *  - Inject into AI system prompt
+ * ═══════════════════════════════════════════════════════════════
  */
 object MemoryManager {
 
-    private lateinit var db: LeoMemoryDb
-    private val stopWords = setOf(
-        "the","a","an","is","are","was","were","i","you","me","my","your","to","of",
-        "and","or","but","if","in","on","at","for","with","this","that","it","be","do",
-        "did","done","have","has","had","will","would","could","should","can","please"
-    )
+    private const val PREFS = "leo_memory_prefs"
+    private const val KEY_MEMORIES = "memories_list"
+    private const val KEY_ENABLED = "memory_enabled"
 
-    fun init(ctx: Context) {
-        db = LeoMemoryDb(ctx.applicationContext)
-        // Warm up + decay
-        Thread {
-            try {
-                val n = db.count()
-                Logger.system("[Memory] $n memories online")
-                db.decayLowImportance(olderThanMs = 14L * 24 * 3600 * 1000)
-            } catch (t: Throwable) { Logger.warn("[Memory] init: ${t.message}") }
-        }.start()
+    private var prefs: SharedPreferences? = null
+
+    fun init(context: Context) {
+        if (prefs != null) return
+        prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     }
 
-    fun store(kind: String, content: String, importance: Int = 5): Long {
-        if (!::db.isInitialized) return -1
-        val tokens = tokenize(content).joinToString(" ")
-        return try {
-            db.insertMemory(kind, content.take(2000), tokens, importance)
-        } catch (t: Throwable) { Logger.warn("[Memory] store: ${t.message}"); -1 }
+    fun isEnabled(): Boolean = prefs?.getBoolean(KEY_ENABLED, true) ?: true
+
+    fun setEnabled(enabled: Boolean) {
+        prefs?.edit()?.putBoolean(KEY_ENABLED, enabled)?.apply()
     }
 
-    fun storeChat(userMsg: String, assistantMsg: String) {
-        store("episodic", "JD: $userMsg\nLeo: $assistantMsg", importance = 5)
+    /** Get all saved memories */
+    fun getAllMemories(): List<String> {
+        val json = prefs?.getString(KEY_MEMORIES, "[]") ?: "[]"
+        val arr = JSONArray(json)
+        val list = mutableListOf<String>()
+        for (i in 0 until arr.length()) {
+            list.add(arr.getString(i))
+        }
+        return list
     }
 
-    fun storeFact(fact: String) = store("semantic", fact, importance = 9)
+    /** Add a memory manually */
+    fun addMemory(text: String) {
+        if (text.isBlank()) return
+        val memories = getAllMemories().toMutableList()
+        memories.add(text.trim())
+        saveMemories(memories)
+    }
+
+    /** Remove a memory by index */
+    fun removeMemory(index: Int) {
+        val memories = getAllMemories().toMutableList()
+        if (index in memories.indices) {
+            memories.removeAt(index)
+            saveMemories(memories)
+        }
+    }
+
+    /** Clear all memories */
+    fun clearAll() {
+        prefs?.edit()?.putString(KEY_MEMORIES, "[]")?.apply()
+    }
 
     /**
-     * Recall the top-N most relevant memories for the given query.
-     * Uses TF-IDF cosine similarity over tokenized content.
+     * Auto-detect memory-worthy statements from user message.
+     * Triggers on phrases like "I like", "remember", "I prefer", etc.
+     * Returns true if a memory was saved.
      */
-    fun recall(query: String, topN: Int = 5): List<String> {
-        if (!::db.isInitialized) return emptyList()
-        val rows = try { db.fetchAllForRecall(800) } catch (t: Throwable) { return emptyList() }
-        if (rows.isEmpty()) return emptyList()
+    fun autoExtractFromMessage(message: String): Boolean {
+        if (!isEnabled()) return false
+        val lower = message.lowercase().trim()
 
-        val qTokens = tokenize(query)
-        if (qTokens.isEmpty()) return emptyList()
+        val triggers = listOf(
+            "i like ", "i prefer ", "i love ", "i hate ", "i dislike ",
+            "remember ", "remember that ", "don't forget ", "note that ",
+            "my name is ", "i am ", "i'm ", "always ", "never ",
+            "i use ", "i work ", "i live ", "i speak ", "my favorite"
+        )
 
-        // Document frequency
-        val df = HashMap<String, Int>()
-        rows.forEach { row ->
-            row.tokens.split(' ').toHashSet().forEach { tok ->
-                if (tok.isNotEmpty()) df[tok] = (df[tok] ?: 0) + 1
+        for (trigger in triggers) {
+            if (lower.startsWith(trigger) || lower.contains(" " + trigger)) {
+                // Extract the memory statement
+                val idx = lower.indexOf(trigger)
+                val memory = message.substring(idx).trim()
+                // Don't save if too long or too short
+                if (memory.length in 5..200) {
+                    addMemory(memory)
+                    return true
+                }
             }
         }
-        val n = rows.size.toDouble()
-        fun idf(t: String) = ln((n + 1.0) / ((df[t] ?: 0) + 1.0)) + 1.0
-
-        val qVec = HashMap<String, Double>()
-        qTokens.forEach { t -> qVec[t] = (qVec[t] ?: 0.0) + 1.0 }
-        qVec.forEach { (t, tf) -> qVec[t] = tf * idf(t) }
-        val qNorm = sqrt(qVec.values.sumOf { it * it })
-
-        val scored = rows.map { row ->
-            val docTokens = row.tokens.split(' ')
-            val dVec = HashMap<String, Double>()
-            docTokens.forEach { if (it.isNotEmpty()) dVec[it] = (dVec[it] ?: 0.0) + 1.0 }
-            dVec.forEach { (t, tf) -> dVec[t] = tf * idf(t) }
-            val dNorm = sqrt(dVec.values.sumOf { it * it })
-            var dot = 0.0
-            qVec.forEach { (t, qw) -> dVec[t]?.let { dot += qw * it } }
-            val sim = if (qNorm == 0.0 || dNorm == 0.0) 0.0 else dot / (qNorm * dNorm)
-            // Boost: importance + recency
-            val ageDays = (System.currentTimeMillis() - row.timestamp) / 86_400_000.0
-            val recencyBoost = 1.0 / (1.0 + ageDays / 7.0)
-            val finalScore = sim * (1.0 + row.importance / 10.0) * (0.6 + 0.4 * recencyBoost)
-            row to finalScore
-        }.sortedByDescending { it.second }
-         .take(topN)
-         .filter { it.second > 0.05 }
-
-        scored.forEach { (row, _) -> try { db.touchMemory(row.id) } catch (_: Throwable) {} }
-        return scored.map { it.first.content }
+        return false
     }
 
-    fun buildRagContext(userQuery: String): String {
-        val hits = recall(userQuery, topN = 5)
-        if (hits.isEmpty()) return ""
-        return buildString {
-            appendLine("═══ RELEVANT MEMORIES (RAG) ═══")
-            hits.forEachIndexed { i, m -> appendLine("[MEMORY #${i+1}] $m") }
-            appendLine("═══════════════════════════════")
+    private fun saveMemories(memories: List<String>) {
+        val arr = JSONArray()
+        for (m in memories) {
+            arr.put(m)
         }
+        prefs?.edit()?.putString(KEY_MEMORIES, arr.toString())?.apply()
     }
 
-    fun stats(): String = if (::db.isInitialized) "${db.count()} memories" else "memory offline"
-
-    fun wipeAll() { if (::db.isInitialized) try { db.wipe() } catch (_: Throwable) {} }
-
-    private fun tokenize(text: String): List<String> {
-        return text.lowercase()
-            .replace(Regex("[^a-z0-9\\s]"), " ")
-            .split(Regex("\\s+"))
-            .filter { it.length in 2..30 && it !in stopWords }
+    /** Stats for logging */
+    fun stats(): String {
+        val count = getAllMemories().size
+        return "Memory: $count memories, enabled=$isEnabled"
     }
 }

@@ -1,32 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <!-- LEO THEME — Pitch Black, No ActionBar -->
     <style name="Theme.Leo" parent="Theme.MaterialComponents.NoActionBar">
-        <item name="android:windowBackground">@color/bg_black</item>
-        <item name="android:statusBarColor">@color/statusBar</item>
-        <item name="android:navigationBarColor">@color/navigationBar</item>
+        <item name="colorPrimary">@color/leo_accent</item>
+        <item name="colorPrimaryDark">@color/leo_bg</item>
+        <item name="colorAccent">@color/leo_accent</item>
+        <item name="android:windowBackground">@color/leo_bg</item>
+        <item name="android:statusBarColor">@color/leo_surface</item>
+        <item name="android:navigationBarColor">@color/leo_surface</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-        <item name="colorPrimary">@color/cyan</item>
-        <item name="colorPrimaryVariant">@color/cyan_dim</item>
-        <item name="colorOnPrimary">@color/bg_black</item>
-        <item name="colorSecondary">@color/magenta</item>
-        <item name="colorOnSecondary">@color/bg_black</item>
-        <item name="colorSurface">@color/bg_surface</item>
-        <item name="colorOnSurface">@color/cyan_bright</item>
-        <item name="android:textColor">@color/cyan_bright</item>
-        <item name="android:fontFamily">monospace</item>
-        <!-- No title bar -->
-        <item name="windowNoTitle">true</item>
-        <item name="windowActionBar">false</item>
-        <!-- Keep screen on during agent operation -->
-        <item name="android:keepScreenOn">true</item>
+        <item name="android:textColorPrimary">@color/leo_text_primary</item>
+        <item name="android:textColorSecondary">@color/leo_text_secondary</item>
     </style>
 
-    <!-- Fullscreen variant for splash/boot -->
-    <style name="Theme.Leo.Fullscreen" parent="Theme.Leo">
-        <item name="android:windowFullscreen">true</item>
+    <style name="Theme.Leo.Light" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">@color/leo_accent</item>
+        <item name="colorPrimaryDark">@color/leo_surface_light</item>
+        <item name="colorAccent">@color/leo_accent</item>
+        <item name="android:windowBackground">@color/leo_bg_light</item>
+        <item name="android:statusBarColor">@color/leo_surface_light</item>
+        <item name="android:navigationBarColor">@color/leo_surface_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:textColorPrimary">@color/leo_text_primary_light</item>
+        <item name="android:textColorSecondary">@color/leo_text_secondary_light</item>
     </style>
-
 </resources>

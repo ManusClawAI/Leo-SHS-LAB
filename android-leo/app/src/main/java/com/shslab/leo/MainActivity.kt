@@ -1,96 +1,98 @@
 package com.shslab.leo
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
-import android.widget.Button
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageButton
-import android.widget.ImageView
+import android.widget.PopupMenu
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
+import androidx.core.view.GravityCompat
+import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.shslab.leo.accessibility.LeoAccessibilityService
-import com.shslab.leo.browser.LeoBrowserEngine
-import com.shslab.leo.chat.ChatAdapter
-import com.shslab.leo.core.LeoProtocol
+import com.shslab.leo.chat.*
 import com.shslab.leo.core.Logger
-import com.shslab.leo.executor.ActionDispatcher
-import com.shslab.leo.executor.ActionExecutor
+import com.shslab.leo.memory.MemoryManager
 import com.shslab.leo.network.LeoNetworkClient
-import com.shslab.leo.overlay.OverlayService
-import com.shslab.leo.parser.CommandParser
 import com.shslab.leo.security.SecurityManager
-import com.shslab.leo.voice.SpeechManager
+import com.shslab.leo.tools.ToolRegistry
+import com.shslab.leo.voice.LeoTtsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * ══════════════════════════════════════════════════════
- *  LEO MAIN ACTIVITY — SUPREME SOVEREIGN v6
- *  SHS LAB — TERMINAL-FIRST REACT ENGINE
+ * ═══════════════════════════════════════════════════════════════
+ *  LEO MAIN ACTIVITY v7 — MODERN AI ASSISTANT UI
  *
- *  Supreme Sovereign ReAct Loop:
- *  1. AI → ONE JSON action
- *  2. ActionDispatcher.intercept() — No-Excuse check
- *     → If excuse: silently reinject NO_EXCUSE, loop again
- *     → If lazy MISSION_COMPLETE: demand verification
- *  3. Execute action
- *  4. Auto READ_SCREEN on UI actions
- *  5. Append PERSISTENT_REMINDER to EVERY feedback
- *  6. Endurance boost every 10 steps
- *  7. MISSION_COMPLETE only when verified
- *
- *  MAX_REACT_STEPS = 50 (was 30)
- *  Terminal-First: SHELL_EXEC for files/git/GitHub
- * ══════════════════════════════════════════════════════
+ *  Features:
+ *  - ChatGPT/Gemini-style minimal UI
+ *  - 3-dot menu (compresses all features)
+ *  - Slide-in drawer (half screen)
+ *  - Keyboard-aware input
+ *  - File/image upload
+ *  - Message actions (edit, copy, regenerate, like/dislike, listen)
+ *  - Chat history with pin/archive/delete
+ *  - TTS voice output
+ *  ──────────────────────────────────────────────────────────────
+ * ═══════════════════════════════════════════════════════════════
  */
 class MainActivity : AppCompatActivity() {
 
     // ── Views ──
+    private lateinit var drawerLayout: DrawerLayout
     private lateinit var rvChat: RecyclerView
     private lateinit var etInput: EditText
-    private lateinit var btnSend: Button
+    private lateinit var btnSend: ImageButton
     private lateinit var btnMic: ImageButton
-    private lateinit var btnVault: Button
-    private lateinit var btnSurveillance: Button
-    private lateinit var btnIsland: Button
-    private lateinit var btnEnableAccessibility: Button
-    private lateinit var btnEnableOverlay: Button
-    private lateinit var dotAccessibility: View
-    private lateinit var dotOverlay: View
-    private lateinit var imgLeoLogo: ImageView
-    private lateinit var tvAgentName: TextView
+    private lateinit var btnAttach: ImageButton
+    private lateinit var btnMenu: ImageButton
+    private lateinit var btnNewChat: ImageButton
+    private lateinit var btnMore: ImageButton
+    private lateinit var btnDrawerNewChat: ImageButton
+    private lateinit var btnProfile: ImageButton
+    private lateinit var tvTitle: TextView
 
+    // Drawer views
+    private lateinit var rvChatSessions: RecyclerView
+    private lateinit var rvPinnedChats: RecyclerView
+
+    // ── Components ──
     private lateinit var chatAdapter: ChatAdapter
+    private lateinit var sessionAdapter: SessionAdapter
+    private lateinit var pinnedAdapter: SessionAdapter
+    private lateinit var chatDb: ChatDatabase
+    private lateinit var networkClient: LeoNetworkClient
+    private lateinit var toolRegistry: ToolRegistry
+    private lateinit var ttsManager: LeoTtsManager
 
-    private val networkClient  by lazy { LeoNetworkClient() }
-    private val actionExecutor by lazy { ActionExecutor(this) }
-    private val speechManager  by lazy { SpeechManager(this) }
-    private val browserEngine  by lazy { LeoBrowserEngine.getInstance(this) }
+    // ── State ──
+    private var currentSessionId: String? = null
+    private var isVoiceMode = false
 
-    @Volatile private var pendingLeoId: String? = null
-    @Volatile private var isListening  = false
-
-    // Supreme Sovereign: 50 steps max (was 30)
-    private val MAX_REACT_STEPS = 50
-    // Endurance boost injection every N steps
-    private val ENDURANCE_BOOST_INTERVAL = 10
-    // Max silent reinjects before alerting JD
-    private val MAX_CONSECUTIVE_EXCUSES = 6
+    // File picker
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { handleFileUpload(it) }
+    }
 
     companion object {
         private const val REQUEST_MIC_PERMISSION = 1001
@@ -99,447 +101,533 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         applyTheme()
         super.onCreate(savedInstanceState)
-        SecurityManager.init(this)
-        setContentView(R.layout.activity_main)
-        bindViews()
-        setupChat()
-        wireInputs()
-        bootGreeting()
-        // Pre-init browser engine on main thread
-        browserEngine
-    }
 
-    override fun onResume() {
-        super.onResume()
-        refreshPermissionStatus()
-        updateAgentNameDisplay()
-    }
+        // Setup window
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
-    override fun onDestroy() {
-        super.onDestroy()
-        Logger.clearCallbacks()
-        speechManager.destroy()
+        // Setup DrawerLayout as root
+        drawerLayout = DrawerLayout(this).apply {
+            layoutParams = DrawerLayout.LayoutParams(
+                DrawerLayout.LayoutParams.MATCH_PARENT,
+                DrawerLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        // Inflate main content and drawer
+        layoutInflater.inflate(R.layout.activity_main, drawerLayout, true)
+        layoutInflater.inflate(R.layout.drawer_menu, drawerLayout, true)
+
+        setContentView(drawerLayout)
+
+        initViews()
+        initComponents()
+        setupListeners()
+        setupKeyboardAware()
+        loadSessions()
+
+        // Start with new chat
+        startNewChat(temporary = true)
     }
 
     private fun applyTheme() {
-        val darkMode = SecurityManager.isDarkMode()
-        AppCompatDelegate.setDefaultNightMode(
-            if (darkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        val theme = SecurityManager.getTheme()
+        when (theme) {
+            "light" -> setTheme(R.style.Theme_Leo_Light)
+            else -> setTheme(R.style.Theme_Leo)
+        }
+    }
+
+    private fun initViews() {
+        rvChat = findViewById(R.id.rvChat)
+        etInput = findViewById(R.id.etInput)
+        btnSend = findViewById(R.id.btnSend)
+        btnMic = findViewById(R.id.btnMic)
+        btnAttach = findViewById(R.id.btnAttach)
+        btnMenu = findViewById(R.id.btnMenu)
+        btnNewChat = findViewById(R.id.btnNewChat)
+        btnMore = findViewById(R.id.btnMore)
+        tvTitle = findViewById(R.id.tvTitle)
+        btnDrawerNewChat = findViewById(R.id.btnDrawerNewChat)
+        btnProfile = findViewById(R.id.btnProfile)
+        rvChatSessions = findViewById(R.id.rvChatSessions)
+        rvPinnedChats = findViewById(R.id.rvPinnedChats)
+    }
+
+    private fun initComponents() {
+        chatDb = ChatDatabase(this)
+        networkClient = LeoNetworkClient()
+        toolRegistry = ToolRegistry(this)
+        ttsManager = LeoTtsManager(this)
+        ttsManager.init()
+
+        chatAdapter = ChatAdapter(
+            context = this,
+            onEdit = { msgId, content -> editMessage(msgId, content) },
+            onRegenerate = { msgId -> regenerateMessage(msgId) },
+            onListen = { content -> listenToMessage(content) },
+            onLike = { msgId, liked -> chatDb.setLiked(msgId, liked) },
+            onDislike = { msgId, disliked -> chatDb.setDisliked(msgId, disliked) }
         )
-    }
 
-    private fun bindViews() {
-        rvChat                 = findViewById(R.id.rvChat)
-        etInput                = findViewById(R.id.etInput)
-        btnSend                = findViewById(R.id.btnSend)
-        btnMic                 = findViewById(R.id.btnMic)
-        btnVault               = findViewById(R.id.btnVault)
-        btnSurveillance        = findViewById(R.id.btnSurveillance)
-        btnIsland              = findViewById(R.id.btnIsland)
-        btnEnableAccessibility = findViewById(R.id.btnEnableAccessibility)
-        btnEnableOverlay       = findViewById(R.id.btnEnableOverlay)
-        dotAccessibility       = findViewById(R.id.dotAccessibility)
-        dotOverlay             = findViewById(R.id.dotOverlay)
-        imgLeoLogo             = findViewById(R.id.imgLeoLogo)
-        tvAgentName            = findViewById(R.id.tvAgentName)
-    }
-
-    private fun updateAgentNameDisplay() {
-        val name = SecurityManager.getAgentName()
-        tvAgentName.text = name
-        supportActionBar?.title = name
-    }
-
-    private fun setupChat() {
-        chatAdapter = ChatAdapter()
-        rvChat.apply {
-            adapter       = chatAdapter
-            layoutManager = LinearLayoutManager(this@MainActivity).also { it.stackFromEnd = true }
-            itemAnimator  = null
+        rvChat.layoutManager = LinearLayoutManager(this).apply {
+            stackFromEnd = true
         }
-    }
+        rvChat.adapter = chatAdapter
 
-    private fun wireInputs() {
-        btnSend.setOnClickListener { dispatchUserCommand() }
-        etInput.setOnEditorActionListener { _, _, _ -> dispatchUserCommand(); true }
-        btnMic.setOnClickListener { toggleVoiceInput() }
-        btnVault.setOnClickListener { startActivity(Intent(this, VaultActivity::class.java)) }
-        btnSurveillance.setOnClickListener { startActivity(Intent(this, SurveillanceActivity::class.java)) }
-        btnIsland.setOnClickListener { toggleOverlay() }
-        btnEnableAccessibility.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            })
-        }
-        btnEnableOverlay.setOnClickListener {
-            startActivity(Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            ).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK })
-        }
-    }
-
-    // ══════════════════════════════════════════════════
-    //  VOICE INPUT — STT
-    // ══════════════════════════════════════════════════
-
-    private fun toggleVoiceInput() {
-        if (isListening) {
-            speechManager.stopListening()
-            isListening = false
-            btnMic.setColorFilter(Color.WHITE)
-            return
-        }
-
-        val hasMic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        if (!hasMic) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_MIC_PERMISSION)
-            return
-        }
-
-        isListening = true
-        btnMic.setColorFilter(Color.parseColor("#E91E8C"))
-
-        speechManager.startListening(
-            onResult = { text ->
-                runOnUiThread {
-                    isListening = false
-                    btnMic.setColorFilter(Color.WHITE)
-                    etInput.setText(text)
-                    dispatchUserCommand()
-                }
-            },
-            onError = { err ->
-                runOnUiThread {
-                    isListening = false
-                    btnMic.setColorFilter(Color.WHITE)
-                    Logger.warn("STT error: $err")
-                }
-            },
-            onPartialResult = { partial ->
-                runOnUiThread { etInput.setText(partial) }
-            }
+        sessionAdapter = SessionAdapter(
+            onClick = { session -> openSession(session.id) },
+            onLongClick = { session -> showSessionOptions(session) }
         )
+        rvChatSessions.layoutManager = LinearLayoutManager(this)
+        rvChatSessions.adapter = sessionAdapter
+
+        pinnedAdapter = SessionAdapter(
+            onClick = { session -> openSession(session.id) },
+            onLongClick = { session -> showSessionOptions(session) }
+        )
+        rvPinnedChats.layoutManager = LinearLayoutManager(this)
+        rvPinnedChats.adapter = pinnedAdapter
+
+        // Set title to agent name
+        tvTitle.text = SecurityManager.getAgentName()
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_MIC_PERMISSION &&
-            grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            toggleVoiceInput()
+    private fun setupListeners() {
+        // Menu button - open drawer
+        btnMenu.setOnClickListener {
+            drawerLayout.openDrawer(GravityCompat.START)
+        }
+
+        // New chat (top bar)
+        btnNewChat.setOnClickListener {
+            startNewChat(temporary = true)
+        }
+
+        // New chat (drawer)
+        btnDrawerNewChat.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.START)
+            startNewChat(temporary = true)
+        }
+
+        // 3-dot menu
+        btnMore.setOnClickListener { view ->
+            showMoreMenu(view)
+        }
+
+        // Profile
+        btnProfile.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.START)
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
+        // Send button
+        btnSend.setOnClickListener {
+            sendMessage()
+        }
+
+        // Mic button
+        btnMic.setOnClickListener {
+            if (isVoiceMode) {
+                ttsManager.stop()
+                isVoiceMode = false
+                btnMic.setImageResource(R.drawable.ic_mic)
+            } else {
+                startVoiceInput()
+            }
+        }
+
+        // Attach button
+        btnAttach.setOnClickListener {
+            filePickerLauncher.launch("*/*")
+        }
+
+        // Input text change
+        etInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                btnSend.visibility = if (s.isNullOrBlank()) View.GONE else View.VISIBLE
+            }
+        })
+
+        // Enter to send
+        etInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
+                sendMessage()
+                true
+            } else false
+        }
+
+        // Library button
+        findViewById<android.widget.LinearLayout>(R.id.btnLibrary)?.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.START)
+            // Open library activity
+            Toast.makeText(this, "Library", Toast.LENGTH_SHORT).show()
+        }
+
+        // Scheduled tasks button
+        findViewById<android.widget.LinearLayout>(R.id.btnScheduledTasks)?.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.START)
+            startActivity(Intent(this, ScheduleActivity::class.java))
+        }
+
+        // Drawer search
+        findViewById<ImageButton>(R.id.btnDrawerSearch)?.setOnClickListener {
+            showSearchDialog()
         }
     }
 
-    // ══════════════════════════════════════════════════
-    //  BOOT GREETING
-    // ══════════════════════════════════════════════════
-
-    private fun bootGreeting() {
-        val agentName = SecurityManager.getAgentName()
-        updateAgentNameDisplay()
-        val provider = SecurityManager.getActiveProvider()
-        val hasKey   = SecurityManager.getActiveApiKey().isNotBlank()
-        val leoId    = chatAdapter.beginLeoResponse()
-        pendingLeoId = leoId
-
-        chatAdapter.appendThinkingLog(leoId, "SHS LAB $agentName v6.0 — SUPREME SOVEREIGN")
-        chatAdapter.appendThinkingLog(leoId, "Terminal-First ReAct Engine: ONLINE")
-        chatAdapter.appendThinkingLog(leoId, "Engines: Shell + AccessibilityService + Browser")
-        chatAdapter.appendThinkingLog(leoId, "Anti-Laziness Interceptor: ARMED")
-        chatAdapter.appendThinkingLog(leoId, "Voice: STT + TTS | Surveillance: LIVE")
-
-        if (hasKey) {
-            chatAdapter.appendThinkingLog(leoId, "Vault: UNLOCKED — Provider: ${provider.uppercase()}")
-            chatAdapter.appendThinkingLog(leoId, "Accessibility: ${if (isAccessibilityServiceEnabled()) "CONNECTED" else "PENDING"}")
-            val greeting = "Supreme Sovereign online, JD. I'm $agentName — your omnipotent digital twin. Terminal-first execution, anti-laziness guard, infinite endurance. I execute one verified step at a time. Give me any mission."
-            chatAdapter.finalizeLeoMessage(leoId, greeting)
-            if (SecurityManager.isTTSEnabled()) speechManager.speak(greeting)
-        } else {
-            chatAdapter.appendThinkingLog(leoId, "Vault: LOCKED — No API key")
-            chatAdapter.finalizeLeoMessage(leoId, "No API key set, JD. Tap VAULT, enter your key, and Supreme Sovereign goes live.")
-        }
-
-        pendingLeoId = null
-    }
-
-    // ══════════════════════════════════════════════════
-    //  COMMAND DISPATCH
-    // ══════════════════════════════════════════════════
-
-    private fun dispatchUserCommand() {
-        val text = etInput.text.toString().trim()
-        if (text.isEmpty()) return
-
-        if (SecurityManager.getActiveApiKey().isBlank()) {
-            chatAdapter.addUserMessage(text)
-            val id = chatAdapter.beginLeoResponse()
-            chatAdapter.finalizeLeoMessage(id, "No API key, JD. Tap VAULT first.")
-            etInput.setText("")
-            return
-        }
-
-        etInput.setText("")
-        btnSend.isEnabled = false
-        btnMic.isEnabled  = false
-        chatAdapter.addUserMessage(text)
-
-        val leoId = chatAdapter.beginLeoResponse()
-        pendingLeoId = leoId
-
-        Logger.logCallback = { line -> chatAdapter.appendThinkingLog(leoId, line) }
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            runReActLoop(text, leoId)
-        }
-    }
-
-    // ══════════════════════════════════════════════════
-    //  SUPREME SOVEREIGN REACT LOOP — v6 ENGINE
-    //
-    //  Enhancements over v5:
-    //  - ActionDispatcher.intercept() on EVERY AI response
-    //  - Silent reinject on excuse (up to MAX_CONSECUTIVE_EXCUSES)
-    //  - Demand verification before MISSION_COMPLETE
-    //  - Persistent SYSTEM REMINDER in EVERY API payload
-    //  - Endurance boost every ENDURANCE_BOOST_INTERVAL steps
-    //  - MAX_REACT_STEPS = 50
-    // ══════════════════════════════════════════════════
-
-    private suspend fun runReActLoop(initialMission: String, leoId: String) {
-        val agentName    = SecurityManager.getAgentName()
-        var stepCount    = 0
-        var totalRejects = 0
-
-        // Mission state for ActionDispatcher
-        val missionState = ActionDispatcher.MissionState()
-
-        // Build conversation: system + user mission
-        val conversation = mutableListOf<Map<String, String>>()
-        conversation.add(mapOf("role" to "system", "content" to LeoProtocol.SYSTEM_IDENTITY.trimIndent()))
-        conversation.add(mapOf("role" to "user", "content" to initialMission))
-        // ── DORAEMON MEMORY: store mission for future RAG recall ──
-        try { com.shslab.leo.memory.MemoryManager.store("episodic", "JD asked: $initialMission", importance = 6) } catch (_: Throwable) {}
-
-        try {
-            while (stepCount < MAX_REACT_STEPS) {
-                stepCount++
-                chatAdapter.appendThinkingLog(leoId, "── Step $stepCount/$MAX_REACT_STEPS ──")
-
-                // ── ENDURANCE BOOST every N steps ──────────────
-                if (stepCount > 1 && stepCount % ENDURANCE_BOOST_INTERVAL == 0) {
-                    val boost = ActionDispatcher.buildEnduranceBoost(stepCount)
-                    conversation.add(mapOf("role" to "user", "content" to boost))
-                    chatAdapter.appendThinkingLog(leoId, "[BOOST] Step $stepCount — Endurance injected")
-                }
-
-                // ── AI CALL with PERSISTENT REMINDER ───────────
-                // Build payload with reminder appended to final message
-                val payload = LeoProtocol.buildReActPayloadWithReminder(
-                    conversationHistory = conversation.drop(1), // drop system (already in payload builder)
-                    stepNumber = stepCount
-                )
-                val aiRaw = networkClient.sendWithHistory(payload)
-                chatAdapter.appendThinkingLog(leoId, "[AI→] ${aiRaw.take(120)}")
-
-                // ── SUPREME SOVEREIGN INTERCEPT ─────────────────
-                val decision = ActionDispatcher.intercept(aiRaw, missionState)
-
-                when (decision) {
-
-                    is ActionDispatcher.DispatchDecision.Reinject -> {
-                        totalRejects++
-                        chatAdapter.appendThinkingLog(leoId, "[⚠ INTERCEPTOR] Excuse '${decision.reason}' — reinject #$totalRejects")
-
-                        if (totalRejects >= MAX_CONSECUTIVE_EXCUSES) {
-                            // Too many excuses — tell JD and abort
-                            withContext(Dispatchers.Main) {
-                                chatAdapter.finalizeLeoMessage(leoId,
-                                    "JD, the AI model kept refusing to execute ($totalRejects consecutive times). " +
-                                    "Try a different model in the Vault (e.g. GPT-4o, Claude, Gemini Pro). " +
-                                    "Original mission was: $initialMission"
-                                )
-                                finishDispatch()
-                            }
-                            return
-                        }
-
-                        // Silently inject the override — do NOT add aiRaw to conversation
-                        conversation.add(mapOf("role" to "user", "content" to decision.reinjectMessage))
-                        continue
-                    }
-
-                    is ActionDispatcher.DispatchDecision.DemandVerification -> {
-                        chatAdapter.appendThinkingLog(leoId, "[GUARD] Lazy MISSION_COMPLETE blocked — demanding proof: ${decision.missingProof}")
-                        // Add the demand as user message so AI must verify
-                        conversation.add(mapOf("role" to "assistant", "content" to aiRaw))
-                        conversation.add(mapOf("role" to "user", "content" to decision.verifyMessage))
-                        continue
-                    }
-
-                    is ActionDispatcher.DispatchDecision.Proceed -> {
-                        // All clear — proceed with execution
-                        val cleanJson = decision.cleanJson
-                        // Add to conversation history
-                        conversation.add(mapOf("role" to "assistant", "content" to cleanJson))
-
-                        // ── Parse the single action ─────────────
-                        val cmd = CommandParser.parseSingle(cleanJson)
-
-                        // ── MISSION_COMPLETE ─────────────────────
-                        if (cmd.action == LeoProtocol.Action.MISSION_COMPLETE ||
-                            cmd.action == LeoProtocol.Action.LOG) {
-                            val message = cmd.value.ifBlank {
-                                cmd.raw.optString("message", "Mission complete, $agentName here — done, JD.")
-                            }
-                            chatAdapter.appendThinkingLog(leoId, "✓ Verified complete after $stepCount step(s)")
-
-                            // Check if this MISSION_COMPLETE is asking for credentials
-                            if (ActionDispatcher.isAskingForCredentials(message)) {
-                                withContext(Dispatchers.Main) {
-                                    chatAdapter.finalizeLeoMessage(leoId, message)
-                                    if (SecurityManager.isTTSEnabled()) speechManager.speak(message)
-                                    finishDispatch()
-                                }
-                                return
-                            }
-
-                            withContext(Dispatchers.Main) {
-                                chatAdapter.finalizeLeoMessage(leoId, message)
-                                if (SecurityManager.isTTSEnabled()) speechManager.speak(message)
-                                finishDispatch()
-                            }
-                            // ── DORAEMON MEMORY: persist the chat turn ──
-                            try { com.shslab.leo.memory.MemoryManager.storeChat(initialMission, message) } catch (_: Throwable) {}
-                            return
-                        }
-
-                        // ── EXECUTE the action ───────────────────
-                        val stepResult = actionExecutor.executeSingle(cmd)
-                        val resultStr  = stepResult.result
-                        chatAdapter.appendThinkingLog(leoId,
-                            "${if (stepResult.isError) "✗" else "✓"} [${cmd.action}] → ${resultStr.take(120)}"
-                        )
-
-                        // ── AUTO READ_SCREEN after UI/browser ────
-                        val screenState = if (shouldReadScreen(cmd.action)) {
-                            val svc = LeoAccessibilityService.instance
-                            if (svc != null) {
-                                Thread.sleep(700) // let UI settle
-                                svc.readScreenText().also {
-                                    chatAdapter.appendThinkingLog(leoId, "[EYES] ${it.lines().size} nodes")
-                                }
-                            } else {
-                                "accessibility_not_connected:enable_in_settings"
-                            }
-                        } else {
-                            resultStr.take(500) // For shell/file, screen = output
-                        }
-
-                        // ── Build feedback (includes PERSISTENT_REMINDER) ──
-                        val feedback = if (stepResult.isError) {
-                            LeoProtocol.buildErrorFeedback(
-                                action = "${cmd.action}:${cmd.subAction} target='${cmd.target}'",
-                                error = resultStr,
-                                screenState = screenState,
-                                stepNumber = stepCount
-                            )
-                        } else {
-                            LeoProtocol.buildStepFeedback(
-                                action = "${cmd.action}:${cmd.subAction} target='${cmd.target}'",
-                                executionResult = resultStr,
-                                screenState = screenState,
-                                stepNumber = stepCount
-                            )
-                        }
-
-                        // Add feedback to conversation
-                        conversation.add(mapOf("role" to "user", "content" to feedback))
+    /**
+     * Setup keyboard-aware input — input box rises above keyboard
+     */
+    private fun setupKeyboardAware() {
+        // SOFT_INPUT_ADJUST_RESIZE is already set
+        // This makes the input container move up when keyboard appears
+        val rootView = window.decorView.rootView
+        rootView.viewTreeObserver.addOnGlobalLayoutListener {
+            val heightDiff = rootView.rootView.height - rootView.height
+            if (heightDiff > rootView.rootView.height * 0.15) {
+                // Keyboard is visible
+                rvChat.post {
+                    if (chatAdapter.itemCount > 0) {
+                        rvChat.smoothScrollToPosition(chatAdapter.itemCount - 1)
                     }
                 }
-            }
-
-            // ── HIT MAX STEPS — force final summary ─────────
-            chatAdapter.appendThinkingLog(leoId, "[MAX $MAX_REACT_STEPS STEPS] Forcing final summary...")
-            conversation.add(mapOf("role" to "user", "content" to
-                "[SYSTEM: You have used $MAX_REACT_STEPS ReAct steps. " +
-                "Output MISSION_COMPLETE now with a full, warm, detailed summary for JD of everything you accomplished.]"
-            ))
-            val finalPayload = LeoProtocol.buildReActPayloadWithReminder(conversation.drop(1), MAX_REACT_STEPS + 1)
-            val finalRaw = networkClient.sendWithHistory(finalPayload)
-            val finalCmd = CommandParser.parseSingle(finalRaw)
-            val finalMsg = finalCmd.value.ifBlank {
-                finalCmd.raw.optString("message", "Completed $MAX_REACT_STEPS steps on your mission, JD.")
-            }
-            withContext(Dispatchers.Main) {
-                chatAdapter.finalizeLeoMessage(leoId, finalMsg)
-                if (SecurityManager.isTTSEnabled()) speechManager.speak(finalMsg)
-                finishDispatch()
-            }
-
-        } catch (e: Exception) {
-            withContext(Dispatchers.Main) {
-                chatAdapter.appendThinkingLog(leoId, "[ERR] ${e.javaClass.simpleName}: ${e.message?.take(100)}")
-                chatAdapter.finalizeLeoMessage(leoId, "Network error on step $stepCount, JD: ${e.message?.take(100)}")
-                finishDispatch()
             }
         }
     }
 
     /**
-     * Read screen after UI control or browser nav.
-     * For SHELL_EXEC/FS: the output IS the feedback — no screen read needed.
+     * 3-dot menu — compresses Overlay, Vault, Settings, Watch, HUD, Accessibility
      */
-    private fun shouldReadScreen(action: String): Boolean = when (action) {
-        LeoProtocol.Action.UI_CONTROL,
-        LeoProtocol.Action.BROWSER_NAVIGATE,
-        LeoProtocol.Action.BROWSER_CLICK,
-        LeoProtocol.Action.UI_CLICK,
-        LeoProtocol.Action.WAIT_FOR -> true
-        else                         -> false
-    }
-
-    private fun finishDispatch() {
-        pendingLeoId       = null
-        btnSend.isEnabled  = true
-        btnMic.isEnabled   = true
-        Logger.logCallback = null
-    }
-
-    // ══════════════════════════════════════════════════
-    //  PERMISSION STATUS
-    // ══════════════════════════════════════════════════
-
-    private fun refreshPermissionStatus() {
-        val hasA  = isAccessibilityServiceEnabled()
-        val hasO  = Settings.canDrawOverlays(this)
-        val green = 0xFF00C853.toInt()
-        val red   = 0xFFFF4444.toInt()
-
-        fun dot(v: View, c: Int) {
-            v.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(c) }
+    private fun showMoreMenu(view: View) {
+        val popup = PopupMenu(this, view)
+        popup.menuInflater.inflate(R.menu.menu_more, popup.menu)
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.menu_settings -> {
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                    true
+                }
+                R.id.menu_vault -> {
+                    startActivity(Intent(this, VaultActivity::class.java))
+                    true
+                }
+                R.id.menu_surveillance -> {
+                    startActivity(Intent(this, SurveillanceActivity::class.java))
+                    true
+                }
+                R.id.menu_overlay -> {
+                    toggleOverlay()
+                    true
+                }
+                R.id.menu_accessibility -> {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    true
+                }
+                R.id.menu_voice -> {
+                    val enabled = !SecurityManager.isTTSEnabled()
+                    SecurityManager.setTTSEnabled(enabled)
+                    Toast.makeText(this, if (enabled) "Voice output ON" else "Voice output OFF", Toast.LENGTH_SHORT).show()
+                    true
+                }
+                else -> false
+            }
         }
-
-        dot(dotAccessibility, if (hasA) green else red)
-        btnEnableAccessibility.text               = if (hasA) "✓ ON" else "ENABLE"
-        btnEnableAccessibility.backgroundTintList = ColorStateList.valueOf(if (hasA) green else red)
-        btnEnableAccessibility.isEnabled          = !hasA
-
-        dot(dotOverlay, if (hasO) green else red)
-        btnEnableOverlay.text               = if (hasO) "✓ ON" else "ENABLE"
-        btnEnableOverlay.backgroundTintList = ColorStateList.valueOf(if (hasO) green else red)
-        btnEnableOverlay.isEnabled          = !hasO
-    }
-
-    private fun isAccessibilityServiceEnabled(): Boolean {
-        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
-        return enabled.contains("$packageName/${LeoAccessibilityService::class.java.name}", ignoreCase = true)
+        popup.show()
     }
 
     private fun toggleOverlay() {
-        if (!Settings.canDrawOverlays(this)) {
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        try {
+            val intent = Intent(this, com.shslab.leo.overlay.OverlayService::class.java)
+            if (Settings.canDrawOverlays(this)) {
+                startService(intent)
+            } else {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")))
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Overlay error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Send message to AI
+     */
+    private fun sendMessage() {
+        val text = etInput.text.toString().trim()
+        if (text.isBlank()) return
+
+        // Auto-save memory if "I like", "remember" etc.
+        MemoryManager.autoExtractFromMessage(text)
+
+        // Create session if temporary
+        if (currentSessionId == null) {
+            currentSessionId = chatDb.createSession(text.take(30), isTemporary = false)
+        }
+
+        // Add user message
+        val userMsg = ChatMessage(
+            id = chatDb.addMessage(currentSessionId!!, "user", text),
+            sessionId = currentSessionId!!,
+            role = "user",
+            content = text,
+            timestamp = System.currentTimeMillis()
+        )
+        chatAdapter.addMessage(userMsg)
+
+        // Clear input
+        etInput.text.clear()
+
+        // Update session title if first message
+        val messages = chatDb.getMessages(currentSessionId!!)
+        if (messages.size == 1) {
+            chatDb.renameSession(currentSessionId!!, text.take(30))
+            loadSessions()
+        }
+
+        // Send to AI
+        lifecycleScope.launch {
+            val response = withContext(Dispatchers.IO) {
+                try {
+                    val systemPrompt = buildSystemPrompt()
+                    networkClient.sendAgentic(text, systemPrompt, SecurityManager.isMemoryEnabled())
+                } catch (e: Exception) {
+                    "Error: ${e.message}"
+                }
+            }
+
+            // Add assistant message
+            val assistantMsg = ChatMessage(
+                id = chatDb.addMessage(currentSessionId!!, "assistant", response),
+                sessionId = currentSessionId!!,
+                role = "assistant",
+                content = response,
+                timestamp = System.currentTimeMillis()
+            )
+            chatAdapter.addMessage(assistantMsg)
+
+            // TTS if enabled
+            if (SecurityManager.isTTSEnabled()) {
+                ttsManager.speak(response)
+            }
+        }
+    }
+
+    private fun buildSystemPrompt(): String {
+        val sb = StringBuilder()
+        sb.append("You are ${SecurityManager.getAgentName()}, an advanced AI assistant.\n")
+        sb.append("The user's name is ${SecurityManager.getUserName().ifEmpty { "User" }}.\n\n")
+
+        if (SecurityManager.isToolsEnabled()) {
+            sb.append(toolRegistry.getToolsPrompt())
+            sb.append("\n")
+        }
+
+        val personalization = SecurityManager.getPersonalization()
+        if (personalization.isNotBlank()) {
+            sb.append("Personalization: $personalization\n")
+        }
+
+        val behavior = SecurityManager.getBehavior()
+        if (behavior.isNotBlank()) {
+            sb.append("Behavior: $behavior\n")
+        }
+
+        return sb.toString()
+    }
+
+    private fun startNewChat(temporary: Boolean) {
+        currentSessionId = if (temporary) null else chatDb.createSession()
+        chatAdapter.setMessages(emptyList())
+        tvTitle.text = SecurityManager.getAgentName()
+    }
+
+    private fun openSession(sessionId: String) {
+        drawerLayout.closeDrawer(GravityCompat.START)
+        currentSessionId = sessionId
+        val messages = chatDb.getMessages(sessionId)
+        chatAdapter.setMessages(messages)
+        if (messages.isNotEmpty()) {
+            rvChat.scrollToPosition(messages.size - 1)
+        }
+        val session = chatDb.getSessions().find { it.id == sessionId }
+        tvTitle.text = session?.title ?: SecurityManager.getAgentName()
+    }
+
+    private fun loadSessions() {
+        val sessions = chatDb.getSessions()
+        val pinned = chatDb.getPinnedSessions()
+        val normal = sessions.filter { !it.pinned }
+        sessionAdapter.setSessions(normal)
+        pinnedAdapter.setSessions(pinned)
+        findViewById<TextView>(R.id.tvPinnedLabel)?.visibility =
+            if (pinned.isNotEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private fun showSessionOptions(session: ChatSession) {
+        val options = arrayOf("Rename", "Pin/Unpin", "Archive", "Delete")
+        AlertDialog.Builder(this)
+            .setTitle(session.title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showRenameDialog(session)
+                    1 -> { chatDb.pinSession(session.id, !session.pinned); loadSessions() }
+                    2 -> { chatDb.archiveSession(session.id, true); loadSessions() }
+                    3 -> {
+                        AlertDialog.Builder(this)
+                            .setTitle("Delete chat?")
+                            .setMessage("This cannot be undone.")
+                            .setPositiveButton("Delete") { _, _ ->
+                                chatDb.deleteSession(session.id)
+                                loadSessions()
+                                if (currentSessionId == session.id) startNewChat(true)
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showRenameDialog(session: ChatSession) {
+        val input = EditText(this).apply { setText(session.title) }
+        AlertDialog.Builder(this)
+            .setTitle("Rename chat")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                chatDb.renameSession(session.id, input.text.toString())
+                loadSessions()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showSearchDialog() {
+        val input = EditText(this).apply { hint = "Search chats..." }
+        AlertDialog.Builder(this)
+            .setTitle("Search")
+            .setView(input)
+            .setPositiveButton("Search") { _, _ ->
+                val query = input.text.toString().trim()
+                if (query.isNotBlank()) {
+                    val results = chatDb.searchSessions(query)
+                    sessionAdapter.setSessions(results)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun editMessage(msgId: String, content: String) {
+        val input = EditText(this).apply { setText(content) }
+        AlertDialog.Builder(this)
+            .setTitle("Edit message")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val newContent = input.text.toString()
+                chatDb.updateMessage(msgId, newContent)
+                // Reload messages
+                currentSessionId?.let { openSession(it) }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun regenerateMessage(msgId: String) {
+        // Find the user message before this assistant message
+        val messages = chatDb.getMessages(currentSessionId ?: return)
+        val msgIndex = messages.indexOfFirst { it.id == msgId }
+        if (msgIndex > 0) {
+            val userMsg = messages[msgIndex - 1]
+            // Delete the old assistant message
+            chatDb.deleteMessage(msgId)
+            // Resend
+            lifecycleScope.launch {
+                val response = withContext(Dispatchers.IO) {
+                    try {
+                        networkClient.sendAgentic(userMsg.content, buildSystemPrompt(),
+                            SecurityManager.isMemoryEnabled())
+                    } catch (e: Exception) { "Error: ${e.message}" }
+                }
+                chatDb.addMessage(currentSessionId!!, "assistant", response)
+                openSession(currentSessionId!!)
+            }
+        }
+    }
+
+    private fun listenToMessage(content: String) {
+        ttsManager.speak(content)
+        Toast.makeText(this, "Speaking...", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun startVoiceInput() {
+        if (!SecurityManager.isVoiceEnabled()) {
+            Toast.makeText(this, "Voice input disabled in settings", Toast.LENGTH_SHORT).show()
             return
         }
-        startForegroundService(Intent(this, OverlayService::class.java))
+
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_MIC_PERMISSION)
+            return
+        }
+
+        // Use Android's built-in speech recognizer
+        try {
+            val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+                putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Speak to Leo...")
+            }
+            voiceInputLauncher.launch(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Voice input not available: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private val voiceInputLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val text = result.data?.getStringArrayListExtra(
+                android.speech.RecognizerIntent.EXTRA_RESULTS
+            )?.firstOrNull()
+            if (!text.isNullOrBlank()) {
+                etInput.setText(text)
+                etInput.setSelection(text.length)
+            }
+        }
+    }
+
+    private fun handleFileUpload(uri: Uri) {
+        currentSessionId?.let { sid ->
+            val fileName = getFileName(uri) ?: "uploaded_file"
+            chatDb.addFile(sid, uri.toString(), fileName, contentType(uri))
+            Toast.makeText(this, "File attached: $fileName", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun getFileName(uri: Uri): String? {
+        val cursor = contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val idx = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) return it.getString(idx)
+            }
+        }
+        return uri.lastPathSegment
+    }
+
+    private fun contentType(uri: Uri): String {
+        return contentResolver.getType(uri) ?: "application/octet-stream"
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        ttsManager.shutdown()
     }
 }

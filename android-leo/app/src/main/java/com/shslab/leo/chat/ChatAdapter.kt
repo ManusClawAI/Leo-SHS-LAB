@@ -1,135 +1,76 @@
 package com.shslab.leo.chat
 
-import android.os.Handler
-import android.os.Looper
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
 import com.shslab.leo.R
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
- * ══════════════════════════════════════════
- *  LEO CHAT ADAPTER — SHS LAB
- *
- *  RecyclerView adapter for the chat interface.
- *  Two view types: USER (right-aligned bubble)
- *  and LEO (avatar + thinking accordion + response).
- *
- *  Thinking accordion:
- *  - Collapsed by default ("▶ Thinking... (N)")
- *  - Tap to expand/collapse the mini log console
- *  - All system events accumulate in the log while pending
- * ══════════════════════════════════════════
+ * Modern Chat Adapter with message actions
  */
-class ChatAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+class ChatAdapter(
+    private val context: Context,
+    private val onEdit: (String, String) -> Unit,        // messageId, content
+    private val onRegenerate: (String) -> Unit,           // messageId
+    private val onListen: (String) -> Unit,               // content
+    private val onLike: (String, Boolean) -> Unit,        // messageId, liked
+    private val onDislike: (String, Boolean) -> Unit      // messageId, disliked
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+    private val messages = mutableListOf<ChatMessage>()
 
     companion object {
-        private const val TYPE_USER         = 0
-        private const val TYPE_LEO          = 1
-        const val PAYLOAD_THINKING          = "thinking_update"
-        private val timeFmt = SimpleDateFormat("HH:mm", Locale.US)
+        private const val TYPE_USER = 0
+        private const val TYPE_ASSISTANT = 1
     }
 
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val messages    = mutableListOf<ChatMessage>()
-    private var recyclerView: RecyclerView? = null
-
-    override fun onAttachedToRecyclerView(rv: RecyclerView) {
-        super.onAttachedToRecyclerView(rv)
-        recyclerView = rv
+    fun setMessages(msgs: List<ChatMessage>) {
+        messages.clear()
+        messages.addAll(msgs)
+        notifyDataSetChanged()
     }
 
-    // ──────────────────────────────────────────────────
-    //  PUBLIC MUTATION API (all call on main thread)
-    // ──────────────────────────────────────────────────
-
-    /** Add a user message bubble to the chat. Returns the message id. */
-    fun addUserMessage(text: String): String {
-        val msg = ChatMessage(role = MessageRole.USER, text = text)
-        runOnMain {
-            messages.add(msg)
-            notifyItemInserted(messages.lastIndex)
-            scrollToBottom()
-        }
-        return msg.id
+    fun addMessage(msg: ChatMessage) {
+        messages.add(msg)
+        notifyItemInserted(messages.size - 1)
     }
 
-    /**
-     * Create a pending Leo bubble in "Thinking..." state.
-     * @return the id to use for future appendThinkingLog / finalizeLeoMessage calls
-     */
-    fun beginLeoResponse(): String {
-        val msg = ChatMessage(role = MessageRole.LEO, text = "", isPending = true)
-        runOnMain {
-            messages.add(msg)
-            notifyItemInserted(messages.lastIndex)
-            scrollToBottom()
-        }
-        return msg.id
-    }
-
-    /**
-     * Append a single log line to the thinking accordion of a pending Leo message.
-     * Thread-safe: can be called from any thread.
-     */
-    fun appendThinkingLog(id: String, log: String) {
-        val idx = indexById(id) ?: return
-        val msg = messages[idx]
-        synchronized(msg.thinkingLogs) {
-            msg.thinkingLogs.add(log)
-        }
-        // Debounced: post once per 80ms to avoid hammering the UI
-        mainHandler.post {
-            val currentIdx = indexById(id) ?: return@post
-            notifyItemChanged(currentIdx, PAYLOAD_THINKING)
+    fun updateLastMessage(content: String) {
+        if (messages.isNotEmpty()) {
+            val last = messages.last()
+            messages[messages.size - 1] = last.copy(content = content)
+            notifyItemChanged(messages.size - 1)
         }
     }
 
-    /**
-     * Finalize a pending Leo message: set its text and mark it complete.
-     * This hides "Thinking..." state and shows the real response bubble.
-     */
-    fun finalizeLeoMessage(id: String, text: String) {
-        runOnMain {
-            val idx = indexById(id) ?: return@runOnMain
-            val msg = messages[idx]
-            msg.text      = text
-            msg.isPending = false
-            notifyItemChanged(idx)
-            scrollToBottom()
+    fun removeMessage(position: Int) {
+        if (position in messages.indices) {
+            messages.removeAt(position)
+            notifyItemRemoved(position)
         }
     }
 
-    // ──────────────────────────────────────────────────
-    //  RECYCLER ADAPTER OVERRIDES
-    // ──────────────────────────────────────────────────
+    fun getLastUserMessage(): ChatMessage? = messages.findLast { it.role == "user" }
 
-    override fun getItemViewType(position: Int): Int =
-        if (messages[position].role == MessageRole.USER) TYPE_USER else TYPE_LEO
+    override fun getItemViewType(position: Int): Int {
+        return if (messages[position].role == "user") TYPE_USER else TYPE_ASSISTANT
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
-        return when (viewType) {
-            TYPE_USER -> UserViewHolder(inflater.inflate(R.layout.item_chat_user, parent, false))
-            else      -> LeoViewHolder(inflater.inflate(R.layout.item_chat_leo, parent, false))
-        }
-    }
-
-    override fun onBindViewHolder(
-        holder: RecyclerView.ViewHolder,
-        position: Int,
-        payloads: MutableList<Any>
-    ) {
-        val msg = messages[position]
-        if (payloads.contains(PAYLOAD_THINKING) && holder is LeoViewHolder) {
-            holder.updateThinkingLogs(msg)
+        return if (viewType == TYPE_USER) {
+            UserViewHolder(inflater.inflate(R.layout.item_chat_user, parent, false))
         } else {
-            onBindViewHolder(holder, position)
+            AssistantViewHolder(inflater.inflate(R.layout.item_chat_leo, parent, false))
         }
     }
 
@@ -137,103 +78,85 @@ class ChatAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         val msg = messages[position]
         when (holder) {
             is UserViewHolder -> holder.bind(msg)
-            is LeoViewHolder  -> holder.bind(msg)
+            is AssistantViewHolder -> holder.bind(msg)
         }
     }
 
     override fun getItemCount(): Int = messages.size
 
-    // ──────────────────────────────────────────────────
-    //  VIEW HOLDERS
-    // ──────────────────────────────────────────────────
-
     inner class UserViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val tvMessage   = itemView.findViewById<TextView>(R.id.tvUserMessage)
-        private val tvTimestamp = itemView.findViewById<TextView>(R.id.tvUserTimestamp)
+        private val tvMessage: TextView = itemView.findViewById(R.id.tvMessage)
+        private val actionRow: LinearLayout = itemView.findViewById(R.id.actionRow)
+        private val btnEdit: ImageButton = itemView.findViewById(R.id.btnEdit)
+        private val btnCopy: ImageButton = itemView.findViewById(R.id.btnCopy)
 
         fun bind(msg: ChatMessage) {
-            tvMessage.text   = msg.text
-            tvTimestamp.text = timeFmt.format(Date(msg.timestamp))
+            tvMessage.text = msg.content
+
+            // Click to show actions
+            itemView.setOnClickListener {
+                actionRow.visibility = if (actionRow.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            }
+
+            btnEdit.setOnClickListener {
+                onEdit(msg.id, msg.content)
+                actionRow.visibility = View.GONE
+            }
+
+            btnCopy.setOnClickListener {
+                copyToClipboard(msg.content)
+                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                actionRow.visibility = View.GONE
+            }
         }
     }
 
-    inner class LeoViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val layoutThinking   = itemView.findViewById<View>(R.id.layoutThinking)
-        private val tvThinkingHeader = itemView.findViewById<TextView>(R.id.tvThinkingHeader)
-        private val tvThinkingLogs   = itemView.findViewById<TextView>(R.id.tvThinkingLogs)
-        private val tvMessage        = itemView.findViewById<TextView>(R.id.tvLeoMessage)
-        private val tvTimestamp      = itemView.findViewById<TextView>(R.id.tvLeoTimestamp)
+    inner class AssistantViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val tvMessage: TextView = itemView.findViewById(R.id.tvMessage)
+        private val actionRow: LinearLayout = itemView.findViewById(R.id.actionRow)
+        private val btnCopy: ImageButton = itemView.findViewById(R.id.btnCopy)
+        private val btnListen: ImageButton = itemView.findViewById(R.id.btnListen)
+        private val btnRegenerate: ImageButton = itemView.findViewById(R.id.btnRegenerate)
+        private val btnLike: ImageButton = itemView.findViewById(R.id.btnLike)
+        private val btnDislike: ImageButton = itemView.findViewById(R.id.btnDislike)
 
         fun bind(msg: ChatMessage) {
-            // Always show thinking block (has the log history)
-            layoutThinking.visibility = View.VISIBLE
-            updateThinkingLogs(msg)
+            tvMessage.text = msg.content
 
-            // Accordion expand/collapse toggle
-            tvThinkingHeader.setOnClickListener {
-                msg.isThinkingExpanded = !msg.isThinkingExpanded
-                applyExpansion(msg)
+            itemView.setOnClickListener {
+                actionRow.visibility = if (actionRow.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             }
 
-            // Response bubble — show only when not pending
-            if (!msg.isPending && msg.text.isNotBlank()) {
-                tvMessage.text       = msg.text
-                tvMessage.visibility = View.VISIBLE
-            } else {
-                tvMessage.visibility = View.GONE
+            btnCopy.setOnClickListener {
+                copyToClipboard(msg.content)
+                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                actionRow.visibility = View.GONE
             }
 
-            tvTimestamp.text = timeFmt.format(Date(msg.timestamp))
-            applyExpansion(msg)
-        }
+            btnListen.setOnClickListener {
+                onListen(msg.content)
+                actionRow.visibility = View.GONE
+            }
 
-        fun updateThinkingLogs(msg: ChatMessage) {
-            val logCount = synchronized(msg.thinkingLogs) { msg.thinkingLogs.size }
-            val logText  = synchronized(msg.thinkingLogs) { msg.thinkingLogs.joinToString("\n") }
+            btnRegenerate.setOnClickListener {
+                onRegenerate(msg.id)
+                actionRow.visibility = View.GONE
+            }
 
-            val arrowChar = if (msg.isThinkingExpanded) "▼" else "▶"
-            val stateLabel = if (msg.isPending) "Thinking..." else "Thought"
-            tvThinkingHeader.text = "$arrowChar  $stateLabel ($logCount steps)"
+            btnLike.setOnClickListener {
+                onLike(msg.id, !msg.liked)
+                notifyItemChanged(adapterPosition)
+            }
 
-            tvThinkingLogs.text = logText
-            applyExpansion(msg)
-        }
-
-        private fun applyExpansion(msg: ChatMessage) {
-            tvThinkingLogs.visibility = if (msg.isThinkingExpanded) View.VISIBLE else View.GONE
-            val arrowChar = if (msg.isThinkingExpanded) "▼" else "▶"
-            val stateLabel = if (msg.isPending) "Thinking..." else "Thought"
-            val logCount = synchronized(msg.thinkingLogs) { msg.thinkingLogs.size }
-            tvThinkingHeader.text = "$arrowChar  $stateLabel ($logCount steps)"
+            btnDislike.setOnClickListener {
+                onDislike(msg.id, !msg.disliked)
+                notifyItemChanged(adapterPosition)
+            }
         }
     }
 
-    // ──────────────────────────────────────────────────
-    //  INTERNAL HELPERS
-    // ──────────────────────────────────────────────────
-
-    private fun indexById(id: String): Int? {
-        val idx = messages.indexOfFirst { it.id == id }
-        return if (idx >= 0) idx else null
-    }
-
-    private fun scrollToBottom() {
-        recyclerView?.post {
-            val count = itemCount
-            if (count > 0) recyclerView?.smoothScrollToPosition(count - 1)
-        }
-    }
-
-    private fun runOnMain(block: () -> Unit) {
-        if (Looper.myLooper() == Looper.getMainLooper()) block()
-        else mainHandler.post(block)
-    }
-
-    fun clear() {
-        runOnMain {
-            val size = messages.size
-            messages.clear()
-            notifyItemRangeRemoved(0, size)
-        }
+    private fun copyToClipboard(text: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Leo", text))
     }
 }

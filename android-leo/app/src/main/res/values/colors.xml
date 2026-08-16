@@ -1,38 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    LEO COLOR PALETTE — SHS LAB
-    Extracted from the SHS LAB logo asset.
-    4-color system: Cyan, Magenta, Yellow, Purple
--->
 <resources>
-    <!-- ── PRIMARY BRAND PALETTE ── -->
-    <color name="cyan"    >#00BCD4</color>  <!-- Logo cyan accent -->
-    <color name="magenta" >#E91E8C</color>  <!-- Logo magenta/pink -->
-    <color name="yellow"  >#FFD600</color>  <!-- Logo yellow nodes -->
-    <color name="purple"  >#6B35A5</color>  <!-- Logo center purple -->
+    <!-- Dark Theme (Default) -->
+    <color name="leo_bg">#0F0F0F</color>
+    <color name="leo_surface">#1A1A1A</color>
+    <color name="leo_surface_variant">#242424</color>
+    <color name="leo_divider">#2A2A2A</color>
+    <color name="leo_text_primary">#EAEAEA</color>
+    <color name="leo_text_secondary">#A0A0A0</color>
+    <color name="leo_text_hint">#666666</color>
+    <color name="leo_accent">#6366F1</color>
+    <color name="leo_accent_light">#818CF8</color>
+    <color name="leo_user_bubble">#1E1E2E</color>
+    <color name="leo_agent_bubble">#16213E</color>
+    <color name="leo_error">#EF4444</color>
+    <color name="leo_success">#10B981</color>
+    <color name="leo_warning">#F59E0B</color>
+    <color name="leo_pinned">#FBBF24</color>
 
-    <!-- ── TERMINAL VARIANTS ── -->
-    <color name="cyan_bright"   >#00E5FF</color>  <!-- Terminal text -->
-    <color name="cyan_dim"      >#00838F</color>  <!-- Dimmed elements -->
-    <color name="magenta_dark"  >#880E4F</color>  <!-- Error states -->
-    <color name="green_terminal">#69F0AE</color>  <!-- FS operations -->
-    <color name="red_kill"      >#FF1744</color>  <!-- Kill switch -->
-    <color name="orange_warn"   >#FFAB40</color>  <!-- Warnings -->
-    <color name="blue_net"      >#40C4FF</color>  <!-- Network ops -->
-
-    <!-- ── BACKGROUNDS ── -->
-    <color name="bg_black"      >#000000</color>
-    <color name="bg_near_black" >#0A0A0A</color>
-    <color name="bg_dark"       >#080808</color>
-    <color name="bg_surface"    >#1A1A1A</color>
-    <color name="bg_elevated"   >#1E1E1E</color>
-
-    <!-- ── OVERLAY BUBBLE ── -->
-    <color name="bubble_bg"     >#CC000000</color>  <!-- 80% opacity black -->
-    <color name="bubble_border" >#00E5FF</color>
-    <color name="status_active" >#E91E8C</color>
-
-    <!-- ── STATUS BAR ── -->
-    <color name="statusBar"     >#000000</color>
-    <color name="navigationBar" >#000000</color>
+    <!-- Light Theme -->
+    <color name="leo_bg_light">#FFFFFF</color>
+    <color name="leo_surface_light">#F5F5F5</color>
+    <color name="leo_surface_variant_light">#EBEBEB</color>
+    <color name="leo_divider_light">#E0E0E0</color>
+    <color name="leo_text_primary_light">#1A1A1A</color>
+    <color name="leo_text_secondary_light">#666666</color>
+    <color name="leo_text_hint_light">#999999</color>
 </resources>
