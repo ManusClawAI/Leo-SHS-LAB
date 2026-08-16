@@ -1,0 +1,9 @@
+android-leo/.gradle/
+android-leo/app/build/
+android-leo/build/
+android-leo/local.properties
+*.apk
+*.aab
+*.keystore
+.DS_Store
+Thumbs.db
