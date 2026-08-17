@@ -39,12 +39,12 @@ object GadgetRegistry {
         },
         Gadget("memory_bread", "Memory Bread (アンキパン)") { _, p ->
             val fact = p["fact"] ?: return@Gadget "ERROR: missing 'fact'"
-            com.shslab.leo.memory.MemoryManager.storeFact(fact)
+            com.shslab.leo.memory.MemoryManager.addMemory(fact)
             "OK: memorized — '${fact.take(60)}'"
         },
         Gadget("time_machine", "Time Machine (タイムマシン)") { _, p ->
             val q = p["query"] ?: ""
-            val hits = com.shslab.leo.memory.MemoryManager.recall(q, topN = 5)
+            val hits = com.shslab.leo.memory.MemoryManager.getAllMemories().filter { it.contains(q) }
             if (hits.isEmpty()) "No matching memories." else hits.joinToString("\n---\n")
         },
         Gadget("whatsapp_send", "WhatsApp Messenger") { ctx, p ->

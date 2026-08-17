@@ -60,8 +60,8 @@ class SettingsActivity : AppCompatActivity() {
         })
 
         // ── Memory ──
-        items.add(SettingsItem("Memory", if (MemoryManager.isEnabled()) "ON — preferences saved" else "OFF") {
-            MemoryManager.setEnabled(!MemoryManager.isEnabled())
+        items.add(SettingsItem("Memory", if (MemoryManager.isEnabled) "ON — preferences saved" else "OFF") {
+            MemoryManager.setEnabled(!MemoryManager.isEnabled)
             recreate()
         })
         items.add(SettingsItem("View Memories", "${MemoryManager.getAllMemories().size} memories saved") {

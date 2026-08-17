@@ -14,10 +14,6 @@ import com.shslab.leo.hardware.HardwareManager
 import com.shslab.leo.shell.ShellBridge
 import org.json.JSONObject
 
-/**
- * LEO TOOL REGISTRY — 50+ BUILT-IN TOOLS
- * Comprehensive Android management capabilities.
- */
 class ToolRegistry(private val context: Context) {
 
     data class Tool(val name: String, val description: String, val parameters: String, val category: String)
@@ -27,22 +23,16 @@ class ToolRegistry(private val context: Context) {
         Tool("file_write", "Write to file", "{\"path\":\"string\",\"content\":\"string\"}", "File"),
         Tool("file_delete", "Delete file", "{\"path\":\"string\"}", "File"),
         Tool("file_list", "List directory", "{\"path\":\"string\"}", "File"),
-        Tool("file_copy", "Copy file", "{\"src\":\"string\",\"dst\":\"string\"}", "File"),
-        Tool("file_move", "Move file", "{\"src\":\"string\",\"dst\":\"string\"}", "File"),
-        Tool("file_mkdir", "Create directory", "{\"path\":\"string\"}", "File"),
         Tool("app_open", "Open app", "{\"package\":\"string\"}", "App"),
         Tool("app_list", "List apps", "{}", "App"),
-        Tool("app_info", "App info", "{\"package\":\"string\"}", "App"),
         Tool("setting_brightness", "Set brightness", "{\"level\":\"int\"}", "System"),
         Tool("setting_volume", "Set volume", "{\"level\":\"int\"}", "System"),
         Tool("setting_flashlight", "Toggle flashlight", "{\"enable\":\"bool\"}", "System"),
-        Tool("setting_screen_rotation", "Toggle rotation", "{\"enable\":\"bool\"}", "System"),
         Tool("call_phone", "Make call", "{\"number\":\"string\"}", "Communication"),
         Tool("send_sms", "Send SMS", "{\"number\":\"string\",\"message\":\"string\"}", "Communication"),
         Tool("send_email", "Send email", "{\"to\":\"string\",\"subject\":\"string\",\"body\":\"string\"}", "Communication"),
         Tool("set_alarm", "Set alarm", "{\"hour\":\"int\",\"minute\":\"int\"}", "Calendar"),
         Tool("set_timer", "Set timer", "{\"seconds\":\"int\"}", "Calendar"),
-        Tool("hw_info", "Hardware info", "{}", "Hardware"),
         Tool("hw_battery", "Battery info", "{}", "Hardware"),
         Tool("hw_camera", "Open camera", "{}", "Hardware"),
         Tool("hw_vibrate", "Vibrate", "{\"duration\":\"int\"}", "Hardware"),
@@ -57,11 +47,11 @@ class ToolRegistry(private val context: Context) {
         Tool("memory_save", "Save memory", "{\"text\":\"string\"}", "Memory"),
         Tool("memory_recall", "Recall memories", "{}", "Memory"),
         Tool("share_text", "Share text", "{\"text\":\"string\"}", "Misc"),
-        Tool("open_settings", "Open settings", "{\"section\":\"string\"}", "Misc"),
+        Tool("open_settings", "Open settings", "{}", "Misc"),
         Tool("get_device_info", "Device info", "{}", "Misc")
     )
 
-    private val fileEngine by lazy { FileEngine(context) }
+    private val fileEngine by lazy { FileEngine() }
     private val gitManager by lazy { GitManager(context) }
     private val hardwareManager by lazy { HardwareManager(context) }
     private val shellBridge by lazy { ShellBridge() }
@@ -69,13 +59,10 @@ class ToolRegistry(private val context: Context) {
     fun execute(toolName: String, params: JSONObject): String {
         return try {
             when (toolName) {
-                "file_read" -> fileEngine.readFile(params.getString("path"))
-                "file_write" -> { fileEngine.writeFile(params.getString("path"), params.getString("content")); "Written" }
-                "file_delete" -> { fileEngine.deleteFile(params.getString("path")); "Deleted" }
-                "file_list" -> fileEngine.listFiles(params.getString("path"))
-                "file_copy" -> { fileEngine.copyFile(params.getString("src"), params.getString("dst")); "Copied" }
-                "file_move" -> { fileEngine.moveFile(params.getString("src"), params.getString("dst")); "Moved" }
-                "file_mkdir" -> { fileEngine.makeDirectory(params.getString("path")); "Created" }
+                "file_read" -> fileEngine.readFileContent(params.getString("path")) 
+                "file_write" -> { fileEngine.writeCodeFile(params.getString("path"), params.getString("content")); "Written" }
+                "file_delete" -> { fileEngine.deleteTarget(params.getString("path")); "Deleted" }
+                "file_list" -> fileEngine.listDirectory(params.getString("path")).joinToString("\n")
                 "app_open" -> {
                     val pkg = params.getString("package")
                     val intent = context.packageManager.getLaunchIntentForPackage(pkg)
@@ -83,23 +70,15 @@ class ToolRegistry(private val context: Context) {
                     else "App not found: $pkg"
                 }
                 "app_list" -> context.packageManager.getInstalledApplications(0).joinToString("\n") { it.packageName }
-                "setting_brightness" -> {
-                    Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, params.getInt("level"))
-                    "Brightness set"
-                }
-                "setting_volume" -> {
-                    val am = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-                    am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, params.getInt("level"), 0)
-                    "Volume set"
-                }
-                "setting_flashlight" -> { hardwareManager.toggleFlashlight(params.getBoolean("enable")); "Flashlight toggled" }
+                "setting_brightness" -> hardwareManager.setBrightness(params.optString("level", "128"))
+                "setting_volume" -> hardwareManager.setVolume(params.optString("level", "10"))
+                "setting_flashlight" -> hardwareManager.setFlashlight(params.getBoolean("enable"))
                 "call_phone" -> {
                     val i = Intent(Intent.ACTION_CALL, Uri.parse("tel:${params.getString("number")}"))
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); context.startActivity(i); "Calling"
                 }
                 "send_sms" -> {
-                    SmsManager.getDefault().sendTextMessage(params.getString("number"), null, params.getString("message"), null, null)
-                    "SMS sent"
+                    SmsManager.getDefault().sendTextMessage(params.getString("number"), null, params.getString("message"), null, null); "SMS sent"
                 }
                 "send_email" -> {
                     val i = Intent(Intent.ACTION_SEND).apply {
@@ -109,8 +88,7 @@ class ToolRegistry(private val context: Context) {
                         putExtra(Intent.EXTRA_TEXT, params.getString("body"))
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    context.startActivity(Intent.createChooser(i, "Send email").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
-                    "Email opened"
+                    context.startActivity(Intent.createChooser(i, "Send email").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }); "Email opened"
                 }
                 "set_alarm" -> {
                     val i = Intent(AlarmClock.ACTION_SET_ALARM).apply {
@@ -127,22 +105,12 @@ class ToolRegistry(private val context: Context) {
                     }
                     context.startActivity(i); "Timer set"
                 }
-                "hw_info" -> hardwareManager.getDeviceInfo()
-                "hw_battery" -> hardwareManager.getBatteryInfo()
-                "hw_camera" -> {
-                    val i = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
-                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); context.startActivity(i); "Camera opened"
-                }
-                "hw_vibrate" -> {
-                    val v = context.getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                        v.vibrate(android.os.VibrationEffect.createOneShot(params.optLong("duration", 500), android.os.VibrationEffect.DEFAULT_AMPLITUDE))
-                    else @Suppress("DEPRECATION") v.vibrate(params.optLong("duration", 500))
-                    "Vibrated"
-                }
-                "git_clone" -> gitManager.clone(params.getString("url"), params.getString("path"))
-                "github_create_repo" -> gitManager.createRepo(params.getString("name"), params.optBoolean("private"))
-                "shell_exec" -> shellBridge.execute(params.getString("command"))
+                "hw_battery" -> hardwareManager.getBatteryLevel()
+                "hw_camera" -> hardwareManager.openCamera()
+                "hw_vibrate" -> hardwareManager.vibrate(params.optLong("duration", 500L))
+                "git_clone" -> gitManager.cloneRepo(params.getString("url"), params.getString("path"))
+                "github_create_repo" -> gitManager.createRepo(params.getString("name"), "", false) ?: "Created"
+                "shell_exec" -> shellBridge.exec(params.getString("command"))
                 "web_open" -> {
                     val i = Intent(Intent.ACTION_VIEW, Uri.parse(params.getString("url")))
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); context.startActivity(i); "Opened"
@@ -172,7 +140,7 @@ class ToolRegistry(private val context: Context) {
                 "get_device_info" -> "Model: ${Build.MODEL}\nBrand: ${Build.BRAND}\nAndroid: ${Build.VERSION.RELEASE}\nSDK: ${Build.VERSION.SDK_INT}"
                 else -> "Unknown tool: $toolName"
             }
-        } catch (e: Exception) { "Tool error: ${e.message}" }
+        } catch (e: Exception) { "Tool error: ${e.message ?: "unknown"}" }
     }
 
     fun getToolsPrompt(): String {

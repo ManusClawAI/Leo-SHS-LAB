@@ -67,7 +67,6 @@ class LeoNetworkClient {
                 val oldest = requestTimestamps.min()
                 val waitMs = MAX_HISTORY_MS - (now - oldest) + 100
                 if (waitMs > 0) {
-                    Logger.log("RateLimit", "Provider $providerId at limit, waiting ${waitMs}ms (silent)")
                     Thread.sleep(waitMs)
                 }
             }
@@ -184,13 +183,12 @@ class LeoNetworkClient {
 
         // Check network before sending
         if (!isNetworkAvailable()) {
-            Logger.log("Network", "Network down, waiting for reconnection (silent)")
             waitForNetwork()
             // After network returns, retry with SAME context
             return sendWithRetry(history, provider, apiKey, endpoint, model, retryCount + 1)
         }
 
-        val providerConfig = ProviderRegistry.getById(provider)
+        val providerConfig = ProviderRegistry.getById(provider) ?: ProviderRegistry.ALL[0]
         val apiFormat = providerConfig?.apiFormat ?: "openai"
 
         return try {
@@ -217,7 +215,6 @@ class LeoNetworkClient {
 
                 // SILENT retry — do NOT send error to user
                 val waitSeconds = getRetryWaitSeconds(provider)
-                Logger.log("RateLimit", "Rate limited, waiting ${waitSeconds}s silently (retry ${retryCount + 1}/$maxRetries)")
 
                 if (retryCount < maxRetries) {
                     Thread.sleep(waitSeconds * 1000L)
@@ -234,7 +231,6 @@ class LeoNetworkClient {
                 msg.contains("SocketException", ignoreCase = true)) {
 
                 // SILENT retry — wait for network
-                Logger.log("Network", "Network error, waiting for reconnection (silent, retry ${retryCount + 1}/$maxRetries)")
 
                 if (retryCount < maxRetries) {
                     waitForNetwork()
@@ -245,7 +241,6 @@ class LeoNetworkClient {
 
             // For other errors, retry a few times silently
             if (retryCount < 3) {
-                Logger.log("Retry", "Error: $msg — retrying silently (${retryCount + 1}/3)")
                 Thread.sleep(5000)
                 return sendWithRetry(history, provider, apiKey, endpoint, model, retryCount + 1)
             }
@@ -268,12 +263,10 @@ class LeoNetworkClient {
         val startTime = System.currentTimeMillis()
         while (System.currentTimeMillis() - startTime < maxWaitSeconds * 1000L) {
             if (isNetworkAvailable()) {
-                Logger.log("Network", "Network restored after ${(System.currentTimeMillis() - startTime) / 1000}s")
                 return
             }
             Thread.sleep(5000) // Check every 5 seconds
         }
-        Logger.log("Network", "Network wait timeout after ${maxWaitSeconds}s")
     }
 
     /**
@@ -296,7 +289,7 @@ class LeoNetworkClient {
         sb.append("If the network drops, wait silently for reconnection and continue from where you stopped.\n")
 
         // ── MEMORY ──
-        if (useMemory && MemoryManager.isEnabled()) {
+        if (useMemory && MemoryManager.isEnabled) {
             try {
                 val memory = MemoryManager.getAllMemories()
                 if (memory.isNotEmpty()) {
@@ -346,7 +339,7 @@ class LeoNetworkClient {
         // ── PROVIDER & MODEL AWARENESS ──
         try {
             val provider = SecurityManager.getActiveProvider()
-            val providerConfig = ProviderRegistry.getById(provider)
+            val providerConfig = ProviderRegistry.getById(provider) ?: ProviderRegistry.ALL[0]
             sb.append("\n═══ CURRENT CONFIGURATION ═══\n")
             sb.append("Active Provider: ${providerConfig?.displayName ?: provider}\n")
             sb.append("Active Model: ${SecurityManager.getActiveModel()}\n")
@@ -587,7 +580,7 @@ class LeoNetworkClient {
         val endpoint = SecurityManager.getActiveEndpoint()
         val model = SecurityManager.getActiveModel()
         val provider = SecurityManager.getActiveProvider()
-        val providerConfig = ProviderRegistry.getById(provider)
+        val providerConfig = ProviderRegistry.getById(provider) ?: ProviderRegistry.ALL[0]
         val apiFormat = providerConfig?.apiFormat ?: "openai"
         enforceRateLimit(provider)
         return when (apiFormat) {

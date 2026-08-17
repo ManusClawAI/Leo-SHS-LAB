@@ -29,7 +29,7 @@ object MemoryManager {
         prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     }
 
-    fun isEnabled(): Boolean = prefs?.getBoolean(KEY_ENABLED, true) ?: true
+    val isEnabled: Boolean get() = prefs?.getBoolean(KEY_ENABLED, true) ?: true
 
     fun setEnabled(enabled: Boolean) {
         prefs?.edit()?.putBoolean(KEY_ENABLED, enabled)?.apply()
@@ -74,7 +74,7 @@ object MemoryManager {
      * Returns true if a memory was saved.
      */
     fun autoExtractFromMessage(message: String): Boolean {
-        if (!isEnabled()) return false
+        if (!isEnabled) return false
         val lower = message.lowercase().trim()
 
         val triggers = listOf(

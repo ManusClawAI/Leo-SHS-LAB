@@ -33,7 +33,7 @@ class LeoNotificationListener : NotificationListenerService() {
             if (title.isEmpty() && text.isEmpty()) return
 
             val short = "[notif] $pkg • $title — ${text.take(140)}"
-            MemoryManager.store("episodic", short, importance = 4)
+            MemoryManager.addMemory("Notification: $short")
             Logger.system("[Notif] captured: ${short.take(80)}")
         } catch (t: Throwable) {
             Logger.warn("[Notif] ${t.message}")

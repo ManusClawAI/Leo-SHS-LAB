@@ -27,15 +27,10 @@ class SocialMediaWorker(ctx: Context, params: WorkerParameters) : CoroutineWorke
 
     override suspend fun doWork(): Result {
         return try {
-            val recent = MemoryManager.recall("notification message social", topN = 5)
+            val recent = MemoryManager.getAllMemories().filter { it.contains("notification") || it.contains("message") }
             if (recent.isNotEmpty()) {
-                Logger.system("[BgWatcher] swept ${recent.size} recent context items")
-                MemoryManager.store(
-                    kind = "episodic",
-                    content = "[bg-sweep] reviewed ${recent.size} signals at " +
-                              java.text.SimpleDateFormat("HH:mm").format(java.util.Date()),
-                    importance = 2
-                )
+                MemoryManager.addMemory("[bg-sweep] reviewed ${recent.size} signals at " + java.text.SimpleDateFormat("HH:mm").format(java.util.Date()))
+
             }
             Result.success()
         } catch (t: Throwable) {
