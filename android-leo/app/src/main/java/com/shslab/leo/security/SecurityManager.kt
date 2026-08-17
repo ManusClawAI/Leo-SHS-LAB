@@ -320,6 +320,19 @@ object SecurityManager {
     fun setRateLimitAware(enabled: Boolean) = storeBool(KEY_RATE_LIMIT_AWARE, enabled)
     fun isRateLimitAware(): Boolean = retrieveBool(KEY_RATE_LIMIT_AWARE, true)
 
+    // ── Configurable Retry Wait Time (per provider) ──
+    // Format: "retry_wait_<provider_id>" = seconds (default 60 for NVIDIA, 30 for others)
+    private fun retryWaitKey(providerId: String) = "retry_wait_$providerId"
+
+    fun setRetryWaitSeconds(providerId: String, seconds: Int) {
+        store(retryWaitKey(providerId), seconds.toString())
+    }
+
+    fun getRetryWaitSeconds(providerId: String, default: Int = 30): Int {
+        val stored = retrieve(retryWaitKey(providerId), "")
+        return if (stored.isNotBlank()) stored.toIntOrNull() ?: default else default
+    }
+
     // ═══════════════════════════════════════════════════════════
     //  GitHub
     // ═══════════════════════════════════════════════════════════

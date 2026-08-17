@@ -36,6 +36,9 @@ class LeoApplication : Application() {
         // 2. Doraemon RAG memory
         MemoryManager.init(this)
 
+        // 3. Connectors (platform credentials)
+        com.shslab.leo.connectors.ConnectorManager.init(this)
+
         // 3. Voice subsystems — kick off model downloads on first launch
         SherpaTtsManager.init(this)
         PiperModelDownloader.ensureDownloadedAsync(this)

@@ -10,6 +10,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.shslab.leo.connectors.ConnectorManager
 import com.shslab.leo.memory.MemoryManager
 import com.shslab.leo.network.ProviderRegistry
 import com.shslab.leo.security.SecurityManager
@@ -100,6 +101,11 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this, "Archived chats", Toast.LENGTH_SHORT).show()
         })
 
+        // ── Connectors ──
+        items.add(SettingsItem("Connectors", "${ConnectorManager.getAllConnectors().size} platform connections") {
+            showConnectorsDialog()
+        })
+
         // ── Leo Settings ──
         items.add(SettingsItem("Provider", ProviderRegistry.getById(SecurityManager.getActiveProvider())?.displayName ?: "None") {
             showProviderDialog()
@@ -136,7 +142,134 @@ class SettingsActivity : AppCompatActivity() {
             }
         })
 
+        // ── Rate Limit Retry Wait Time ──
+        val activeProvider = SecurityManager.getActiveProvider()
+        val defaultWait = if (activeProvider == "nvidia") 60 else 30
+        val currentWait = SecurityManager.getRetryWaitSeconds(activeProvider, defaultWait)
+        items.add(SettingsItem("Rate Limit Wait Time", "${currentWait}s for ${ProviderRegistry.getById(activeProvider)?.displayName ?: activeProvider}") {
+            showRetryWaitDialog(activeProvider, currentWait)
+        })
+
         return items
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Connectors Dialog
+    // ═══════════════════════════════════════════════════════════
+
+    private fun showConnectorsDialog() {
+        val connectors = ConnectorManager.getAllConnectors()
+
+        if (connectors.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("Connectors")
+                .setMessage("No connectors added yet.\nAdd a platform connection (GitHub, GitLab, etc.) to give Leo access to your accounts.")
+                .setPositiveButton("Add Connector") { _, _ -> showAddConnectorDialog() }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+
+        val items = connectors.map { "${it.platformName} (${it.username})" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Connectors (${connectors.size})")
+            .setItems(items) { _, which ->
+                val connector = connectors[which]
+                AlertDialog.Builder(this)
+                    .setTitle(connector.platformName)
+                    .setMessage("Username: ${connector.username}\nEmail: ${connector.email}\nToken: ✓ (hidden)")
+                    .setPositiveButton("Edit") { _, _ -> showEditConnectorDialog(connector) }
+                    .setNegativeButton("Delete") { _, _ ->
+                        ConnectorManager.deleteConnector(connector.id)
+                        recreate()
+                    }
+                    .setNeutralButton("Cancel", null)
+                    .show()
+            }
+            .setPositiveButton("Add Connector") { _, _ -> showAddConnectorDialog() }
+            .show()
+    }
+
+    private fun showAddConnectorDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 20)
+        }
+        val etPlatform = EditText(this).apply { hint = "Platform name (e.g. GitHub)" }
+        val etUsername = EditText(this).apply { hint = "Username" }
+        val etEmail = EditText(this).apply { hint = "Email" }
+        val etToken = EditText(this).apply { hint = "Token / API Key" }
+        layout.addView(etPlatform)
+        layout.addView(etUsername)
+        layout.addView(etEmail)
+        layout.addView(etToken)
+
+        AlertDialog.Builder(this)
+            .setTitle("Add Connector")
+            .setView(layout)
+            .setPositiveButton("Save") { _, _ ->
+                val platform = etPlatform.text.toString().trim()
+                val username = etUsername.text.toString().trim()
+                val email = etEmail.text.toString().trim()
+                val token = etToken.text.toString().trim()
+                if (platform.isNotBlank() && token.isNotBlank()) {
+                    ConnectorManager.addConnector(platform, username, email, token)
+                    Toast.makeText(this, "Connector added: $platform", Toast.LENGTH_SHORT).show()
+                    recreate()
+                } else {
+                    Toast.makeText(this, "Platform name and token required", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showEditConnectorDialog(connector: ConnectorManager.Connector) {
+        val layout = LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 20)
+        }
+        val etPlatform = EditText(this).apply { setText(connector.platformName) }
+        val etUsername = EditText(this).apply { setText(connector.username) }
+        val etEmail = EditText(this).apply { setText(connector.email) }
+        val etToken = EditText(this).apply { setText(connector.token) }
+        layout.addView(etPlatform)
+        layout.addView(etUsername)
+        layout.addView(etEmail)
+        layout.addView(etToken)
+
+        AlertDialog.Builder(this)
+            .setTitle("Edit ${connector.platformName}")
+            .setView(layout)
+            .setPositiveButton("Save") { _, _ ->
+                ConnectorManager.updateConnector(connector.id,
+                    etPlatform.text.toString().trim(),
+                    etUsername.text.toString().trim(),
+                    etEmail.text.toString().trim(),
+                    etToken.text.toString().trim())
+                recreate()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Retry Wait Time Dialog
+    // ═══════════════════════════════════════════════════════════
+
+    private fun showRetryWaitDialog(providerId: String, currentWait: Int) {
+        val options = arrayOf("15 seconds", "30 seconds", "45 seconds", "60 seconds", "90 seconds", "120 seconds")
+        val values = intArrayOf(15, 30, 45, 60, 90, 120)
+        AlertDialog.Builder(this)
+            .setTitle("Rate Limit Wait Time\n(Provider: ${ProviderRegistry.getById(providerId)?.displayName ?: providerId})")
+            .setSingleChoiceItems(options, values.indexOf(currentWait).coerceAtLeast(0)) { dialog, which ->
+                SecurityManager.setRetryWaitSeconds(providerId, values[which])
+                Toast.makeText(this, "Wait time set to ${values[which]}s", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+                recreate()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showTextEdit(title: String, current: String, onSave: (String) -> Unit) {
