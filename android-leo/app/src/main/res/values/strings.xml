@@ -1,6 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Leo</string>
-    <string name="accessibility_service_label">Leo System Agent</string>
-    <string name="accessibility_service_description">Leo requires accessibility access to autonomously control UI elements, fill forms, click buttons, and navigate apps on your device. This is the God-Mode control layer. SHS LAB.</string>
+    <string name="app_name">SHS Leo</string>
+    <string name="accessibility_service_label">SHS Leo Assistant</string>
+    <string name="accessibility_service_description">SHS Leo provides AI assistant capabilities including screen reading, UI automation, and task execution.</string>
 </resources>

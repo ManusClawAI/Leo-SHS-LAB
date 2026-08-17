@@ -126,7 +126,13 @@ class MainActivity : AppCompatActivity() {
         loadSessions()
 
         // Start with new chat
-        startNewChat(temporary = true)
+        // Check if opened from notification
+        val sessionId = intent.getStringExtra("session_id")
+        if (sessionId != null) {
+            openSession(sessionId)
+        } else {
+            startNewChat(temporary = true)
+        }
     }
 
     private fun applyTheme() {
@@ -189,7 +195,7 @@ class MainActivity : AppCompatActivity() {
         rvPinnedChats.adapter = pinnedAdapter
 
         // Set title to agent name
-        tvTitle.text = SecurityManager.getAgentName()
+        tvTitle.text = "SHS Leo"
     }
 
     private fun setupListeners() {
@@ -200,13 +206,25 @@ class MainActivity : AppCompatActivity() {
 
         // New chat (top bar)
         btnNewChat.setOnClickListener {
+            // Check if opened from notification
+        val sessionId = intent.getStringExtra("session_id")
+        if (sessionId != null) {
+            openSession(sessionId)
+        } else {
             startNewChat(temporary = true)
+        }
         }
 
         // New chat (drawer)
         btnDrawerNewChat.setOnClickListener {
             drawerLayout.closeDrawer(GravityCompat.START)
+            // Check if opened from notification
+        val sessionId = intent.getStringExtra("session_id")
+        if (sessionId != null) {
+            openSession(sessionId)
+        } else {
             startNewChat(temporary = true)
+        }
         }
 
         // 3-dot menu
@@ -262,7 +280,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<android.widget.LinearLayout>(R.id.btnLibrary)?.setOnClickListener {
             drawerLayout.closeDrawer(GravityCompat.START)
             // Open library activity
-            Toast.makeText(this, "Library", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, LibraryActivity::class.java))
         }
 
         // Scheduled tasks button
@@ -356,10 +374,23 @@ class MainActivity : AppCompatActivity() {
      */
     private fun sendMessage() {
         val text = etInput.text.toString().trim()
-        if (text.isBlank()) return
+        val hasAttachment = pendingAttachmentUri != null
+        if (text.isBlank() && !hasAttachment) return
+
+        // Build message content — include attachment info
+        val messageContent = if (hasAttachment) {
+            val fileName = pendingAttachmentName ?: "file"
+            if (text.isNotBlank()) {
+                "$text\n\n[Attached file: $fileName]"
+            } else {
+                "[Attached file: $fileName]"
+            }
+        } else {
+            text
+        }
 
         // Auto-save memory if "I like", "remember" etc.
-        MemoryManager.autoExtractFromMessage(text)
+        MemoryManager.autoExtractFromMessage(messageContent)
 
         // Create session if temporary
         if (currentSessionId == null) {
@@ -376,8 +407,16 @@ class MainActivity : AppCompatActivity() {
         )
         chatAdapter.addMessage(userMsg)
 
-        // Clear input
+        // Clear input and attachment
         etInput.text.clear()
+        etInput.hint = "Message SHS Leo..."
+        if (pendingAttachmentUri != null) {
+            currentSessionId?.let { sid ->
+                chatDb.addFile(sid, pendingAttachmentUri.toString(), pendingAttachmentName ?: "file", "file")
+            }
+        }
+        pendingAttachmentUri = null
+        pendingAttachmentName = null
 
         // Update session title if first message
         val messages = chatDb.getMessages(currentSessionId!!)
@@ -391,7 +430,7 @@ class MainActivity : AppCompatActivity() {
             val response = withContext(Dispatchers.IO) {
                 try {
                     val systemPrompt = buildSystemPrompt()
-                    networkClient.sendAgentic(text, systemPrompt, SecurityManager.isMemoryEnabled())
+                    networkClient.sendAgentic(messageContent, systemPrompt, SecurityManager.isMemoryEnabled())
                 } catch (e: Exception) {
                     "Error: ${e.message}"
                 }
@@ -416,7 +455,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildSystemPrompt(): String {
         val sb = StringBuilder()
-        sb.append("You are ${SecurityManager.getAgentName()}, an advanced AI assistant.\n")
+        sb.append("You are SHS Leo, an advanced AI assistant.\n")
         sb.append("The user's name is ${SecurityManager.getUserName().ifEmpty { "User" }}.\n\n")
 
         if (SecurityManager.isToolsEnabled()) {
@@ -440,7 +479,7 @@ class MainActivity : AppCompatActivity() {
     private fun startNewChat(temporary: Boolean) {
         currentSessionId = if (temporary) null else chatDb.createSession()
         chatAdapter.setMessages(emptyList())
-        tvTitle.text = SecurityManager.getAgentName()
+        tvTitle.text = "SHS Leo"
     }
 
     private fun openSession(sessionId: String) {
@@ -603,12 +642,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var pendingAttachmentUri: Uri? = null
+    private var pendingAttachmentName: String? = null
+
     private fun handleFileUpload(uri: Uri) {
-        currentSessionId?.let { sid ->
-            val fileName = getFileName(uri) ?: "uploaded_file"
-            chatDb.addFile(sid, uri.toString(), fileName, contentType(uri))
-            Toast.makeText(this, "File attached: $fileName", Toast.LENGTH_SHORT).show()
-        }
+        val fileName = getFileName(uri) ?: "uploaded_file"
+        pendingAttachmentUri = uri
+        pendingAttachmentName = fileName
+        // Show the attachment name in the input field
+        etInput.hint = "Attached: $fileName (type message or send directly)"
+        Toast.makeText(this, "Attached: $fileName", Toast.LENGTH_SHORT).show()
     }
 
     private fun getFileName(uri: Uri): String? {

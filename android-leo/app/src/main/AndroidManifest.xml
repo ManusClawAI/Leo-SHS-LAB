@@ -104,21 +104,23 @@
         <activity android:name=".VaultActivity" android:exported="false"
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
-            android:label="Leo Vault — SHS LAB" />
+            android:label="SHS Leo Vault" />
 
         <activity android:name=".SurveillanceActivity" android:exported="false"
             android:screenOrientation="portrait"
-            android:label="Leo Surveillance" />
+            android:label="SHS Leo Surveillance" />
 
         <!-- ── SETTINGS ACTIVITY ── -->
         <activity android:name=".SettingsActivity" android:exported="false"
             android:screenOrientation="portrait"
-            android:label="Settings" />
+            android:label="SHS Leo Settings" />
 
         <!-- ── SCHEDULE ACTIVITY ── -->
+        <activity android:name=".LibraryActivity" android:exported="false" android:screenOrientation="portrait" android:label="SHS Leo Library" />
+        <activity android:name=".ArchivedChatsActivity" android:exported="false" android:screenOrientation="portrait" android:label="SHS Leo Archived" />
         <activity android:name=".ScheduleActivity" android:exported="false"
             android:screenOrientation="portrait"
-            android:label="Scheduled Tasks" />
+            android:label="SHS Leo Scheduled Tasks" />
 
         <!-- ── SCHEDULE RECEIVER ── -->
         <receiver android:name=".schedule.ScheduleReceiver" android:exported="false" />
@@ -133,32 +135,12 @@
             android:foregroundServiceType="specialUse"
             tools:targetApi="34" />
 
-        <!-- ── SIRI-STYLE BUBBLE OVERLAY (v1.7) ── -->
-        <service
-            android:name=".overlay.SiriOverlayService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse"
-            tools:targetApi="34" />
-
-        <!-- ── ACCESSIBILITY (GOD-MODE UI CONTROL) ── -->
-        <service
-            android:name=".accessibility.LeoAccessibilityService"
-            android:exported="true"
-            android:label="@string/accessibility_service_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
 
         <!-- ── VOICE INTERACTION (Default Assistant) ── -->
         <service
             android:name=".voice.LeoVoiceService"
             android:exported="true"
-            android:label="Leo Assistant"
+            android:label="SHS Leo Assistant"
             android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter>
                 <action android:name="android.service.voice.VoiceInteractionService" />
@@ -172,7 +154,7 @@
         <service
             android:name=".automation.LeoNotificationListener"
             android:exported="true"
-            android:label="Leo Notification Gadget"
+            android:label="SHS Leo Notifications"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

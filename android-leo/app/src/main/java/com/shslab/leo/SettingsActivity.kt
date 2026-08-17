@@ -98,7 +98,7 @@ class SettingsActivity : AppCompatActivity() {
         // ── Archived Chats ──
         items.add(SettingsItem("Archived Chats", "View and restore archived chats") {
             // Open archived chats
-            Toast.makeText(this, "Archived chats", Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, ArchivedChatsActivity::class.java))
         })
 
         // ── Connectors ──

@@ -196,10 +196,10 @@ object SecurityManager {
     // ═══════════════════════════════════════════════════════════
 
     fun setAgentName(name: String) {
-        store(KEY_AGENT_NAME, name.trim().ifEmpty { "Leo" })
+        store(KEY_AGENT_NAME, name.trim().ifEmpty { "SHS Leo" })
     }
 
-    fun getAgentName(): String = retrieve(KEY_AGENT_NAME, "Leo")
+    fun getAgentName(): String = retrieve(KEY_AGENT_NAME, "SHS Leo")
 
     fun setUserName(name: String) {
         store(KEY_USER_NAME, name.trim())
