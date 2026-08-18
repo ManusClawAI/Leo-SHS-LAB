@@ -128,9 +128,37 @@ class SettingsActivity : AppCompatActivity() {
                     SecurityManager.getActiveApiKey(), text, SecurityManager.getActiveModel())
             }
         })
-        items.add(SettingsItem("Upload GGUF Model", "For offline use") {
-            Toast.makeText(this, "GGUF upload — select .gguf file", Toast.LENGTH_SHORT).show()
+        items.add(SettingsItem("Upload GGUF Model", 
+            if (SecurityManager.getGgufModelPath().isNotBlank()) "✓ ${SecurityManager.getGgufModelName()}" else "For offline use") {
+            // Launch file picker for GGUF
+            try {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/octet-stream", "model/gguf", "*/*"))
+                }
+                startActivityForResult(intent, 2001)
+            } catch (e: Exception) {
+                Toast.makeText(this, "File picker error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         })
+        // Run GGUF Model button
+        if (SecurityManager.getGgufModelPath().isNotBlank()) {
+            items.add(SettingsItem("Run GGUF Model", "Start offline inference") {
+                // Switch to GGUF provider
+                SecurityManager.setActiveProvider("gguf-local")
+                SecurityManager.setProviderConfig("gguf-local", "", 
+                    "http://localhost:8899/v1/chat/completions", 
+                    SecurityManager.getGgufModelName())
+                Toast.makeText(this, "GGUF model activated. Make sure llama.cpp server is running on port 8899.", Toast.LENGTH_LONG).show()
+                recreate()
+            })
+            items.add(SettingsItem("Remove GGUF Model", "Delete stored model reference") {
+                SecurityManager.setGgufModelPath("")
+                SecurityManager.setGgufModelName("")
+                Toast.makeText(this, "GGUF model reference removed", Toast.LENGTH_SHORT).show()
+            })
+        }
         items.add(SettingsItem("Agent Name", SecurityManager.getAgentName()) {
             showTextEdit("Agent Name", SecurityManager.getAgentName()) { text ->
                 SecurityManager.setAgentName(text)
@@ -414,7 +442,33 @@ class SettingsActivity : AppCompatActivity() {
             }
             .show()
     }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 2001 && resultCode == RESULT_OK) {
+            data?.data?.let { uri ->
+                try {
+                    var fileName = "model.gguf"
+                    contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (nameIdx >= 0) fileName = cursor.getString(nameIdx)
+                        }
+                    }
+                    SecurityManager.setGgufModelPath(uri.toString())
+                    SecurityManager.setGgufModelName(fileName)
+                    Toast.makeText(this, "GGUF model loaded: $fileName", Toast.LENGTH_SHORT).show()
+                    recreate()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 }
+
+// ── Settings Adapter ──
+
 
 // ── Settings Adapter ──
 

@@ -16,7 +16,6 @@
         android:paddingHorizontal="12dp"
         android:elevation="4dp">
 
-        <!-- Left: 2-line menu icon -->
         <ImageButton
             android:id="@+id/btnMenu"
             android:layout_width="40dp"
@@ -26,21 +25,19 @@
             android:contentDescription="Menu"
             android:tint="@color/leo_text_primary" />
 
-        <!-- Title -->
         <TextView
             android:id="@+id/tvTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="12dp"
-            android:text="Leo"
+            android:text="SHS Leo"
             android:textColor="@color/leo_text_primary"
             android:textSize="18sp"
             android:textStyle="bold"
             android:singleLine="true"
             android:ellipsize="end" />
 
-        <!-- Right: New Chat icon -->
         <ImageButton
             android:id="@+id/btnNewChat"
             android:layout_width="40dp"
@@ -50,7 +47,6 @@
             android:contentDescription="New Chat"
             android:tint="@color/leo_text_primary" />
 
-        <!-- Right: 3-dot menu -->
         <ImageButton
             android:id="@+id/btnMore"
             android:layout_width="40dp"
@@ -72,6 +68,29 @@
         android:paddingBottom="16dp"
         android:overScrollMode="never" />
 
+    <!-- Attachment Preview Area (hidden by default) -->
+    <LinearLayout
+        android:id="@+id/attachmentPreviewContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@color/leo_surface"
+        android:padding="4dp">
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/attachmentList"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+    </LinearLayout>
+
     <!-- Input Area -->
     <LinearLayout
         android:id="@+id/inputContainer"
@@ -83,7 +102,6 @@
         android:padding="8dp"
         android:elevation="8dp">
 
-        <!-- Attach button -->
         <ImageButton
             android:id="@+id/btnAttach"
             android:layout_width="40dp"
@@ -92,7 +110,6 @@
             android:src="@drawable/ic_attach"
             android:tint="@color/leo_text_secondary" />
 
-        <!-- Text Input -->
         <EditText
             android:id="@+id/etInput"
             android:layout_width="0dp"
@@ -100,7 +117,7 @@
             android:layout_weight="1"
             android:layout_marginHorizontal="8dp"
             android:background="@drawable/input_bg_pill"
-            android:hint="Message Leo..."
+            android:hint="Message SHS Leo..."
             android:textColorHint="@color/leo_text_hint"
             android:textColor="@color/leo_text_primary"
             android:paddingHorizontal="16dp"
@@ -110,7 +127,6 @@
             android:inputType="textMultiLine|textCapSentences"
             android:imeOptions="actionSend" />
 
-        <!-- Mic button -->
         <ImageButton
             android:id="@+id/btnMic"
             android:layout_width="40dp"
@@ -119,7 +135,6 @@
             android:src="@drawable/ic_mic"
             android:tint="@color/leo_accent" />
 
-        <!-- Send button -->
         <ImageButton
             android:id="@+id/btnSend"
             android:layout_width="40dp"
@@ -128,5 +143,4 @@
             android:src="@drawable/ic_send"
             android:tint="@color/leo_accent" />
     </LinearLayout>
-
 </LinearLayout>

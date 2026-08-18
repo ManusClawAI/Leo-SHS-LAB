@@ -17,8 +17,11 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.PopupMenu
 import android.widget.TextView
+import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import android.graphics.Bitmap
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -89,9 +92,9 @@ class MainActivity : AppCompatActivity() {
 
     // File picker
     private val filePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { handleFileUpload(it) }
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri>? ->
+        uris?.forEach { handleFileUpload(it) }
     }
 
     companion object {
@@ -374,16 +377,16 @@ class MainActivity : AppCompatActivity() {
      */
     private fun sendMessage() {
         val text = etInput.text.toString().trim()
-        val hasAttachment = pendingAttachmentUri != null
-        if (text.isBlank() && !hasAttachment) return
+        val hasAttachments = pendingAttachments.isNotEmpty()
+        if (text.isBlank() && !hasAttachments) return
 
         // Build message content — include attachment info
-        val messageContent = if (hasAttachment) {
-            val fileName = pendingAttachmentName ?: "file"
+        val messageContent = if (hasAttachments) {
+            val fileList = pendingAttachments.joinToString(", ") { it.second }
             if (text.isNotBlank()) {
-                "$text\n\n[Attached file: $fileName]"
+                "$text\n\n[Attached: $fileList]"
             } else {
-                "[Attached file: $fileName]"
+                "[Attached: $fileList]"
             }
         } else {
             text
@@ -407,22 +410,46 @@ class MainActivity : AppCompatActivity() {
         )
         chatAdapter.addMessage(userMsg)
 
-        // Clear input and attachment
+        // Clear input and attachments
         etInput.text.clear()
         etInput.hint = "Message SHS Leo..."
-        if (pendingAttachmentUri != null) {
+        // Save attachments to session
+        if (pendingAttachments.isNotEmpty()) {
             currentSessionId?.let { sid ->
-                chatDb.addFile(sid, pendingAttachmentUri.toString(), pendingAttachmentName ?: "file", "file")
+                for ((uri, name) in pendingAttachments) {
+                    chatDb.addFile(sid, uri.toString(), name, "file")
+                }
             }
         }
-        pendingAttachmentUri = null
-        pendingAttachmentName = null
+        pendingAttachments.clear()
+        updateAttachmentPreview()
+        // Auto-scroll to bottom
+        rvChat.post {
+            if (chatAdapter.itemCount > 0) {
+                rvChat.smoothScrollToPosition(chatAdapter.itemCount - 1)
+            }
+        }
 
         // Update session title if first message
         val messages = chatDb.getMessages(currentSessionId!!)
         if (messages.size == 1) {
             chatDb.renameSession(currentSessionId!!, text.take(30))
             loadSessions()
+        }
+
+        // Show typing indicator
+        val typingMsg = ChatMessage(
+            id = "typing_indicator",
+            sessionId = currentSessionId ?: "",
+            role = "assistant",
+            content = "...",
+            timestamp = System.currentTimeMillis()
+        )
+        chatAdapter.addMessage(typingMsg)
+        rvChat.post {
+            if (chatAdapter.itemCount > 0) {
+                rvChat.smoothScrollToPosition(chatAdapter.itemCount - 1)
+            }
         }
 
         // Send to AI
@@ -433,6 +460,15 @@ class MainActivity : AppCompatActivity() {
                     networkClient.sendAgentic(messageContent, systemPrompt, SecurityManager.isMemoryEnabled())
                 } catch (e: Exception) {
                     "Error: ${e.message}"
+                }
+            }
+
+            // Remove typing indicator
+            runOnUiThread {
+                // Remove the last "typing" message
+                val lastIdx = chatAdapter.itemCount - 1
+                if (lastIdx >= 0) {
+                    chatAdapter.removeMessage(lastIdx)
                 }
             }
 
@@ -487,11 +523,31 @@ class MainActivity : AppCompatActivity() {
         currentSessionId = sessionId
         val messages = chatDb.getMessages(sessionId)
         chatAdapter.setMessages(messages)
+        
+        // Restore conversation context from saved messages
+        networkClient.clearHistory()
+        for (msg in messages) {
+            if (msg.role == "user" || msg.role == "assistant") {
+                // Rebuild conversation history for context preservation
+                try {
+                    val field = LeoNetworkClient::class.java.getDeclaredField("conversationHistory")
+                    field.isAccessible = true
+                    val history = field.get(networkClient) as ArrayDeque<*>
+                    val addMethod = ArrayDeque::class.java.getDeclaredMethod("addLast", Any::class.java)
+                    addMethod.isAccessible = true
+                    addMethod.invoke(history, mapOf("role" to msg.role, "content" to msg.content))
+                } catch (e: Exception) {}
+            }
+        }
+        
         if (messages.isNotEmpty()) {
             rvChat.scrollToPosition(messages.size - 1)
         }
         val session = chatDb.getSessions().find { it.id == sessionId }
-        tvTitle.text = session?.title ?: SecurityManager.getAgentName()
+        tvTitle.text = session?.title ?: "SHS Leo"
+        
+        // Update drawer session list immediately
+        loadSessions()
     }
 
     private fun loadSessions() {
@@ -502,6 +558,9 @@ class MainActivity : AppCompatActivity() {
         pinnedAdapter.setSessions(pinned)
         findViewById<TextView>(R.id.tvPinnedLabel)?.visibility =
             if (pinned.isNotEmpty()) View.VISIBLE else View.GONE
+        // Force drawer to refresh
+        rvChatSessions.adapter?.notifyDataSetChanged()
+        rvPinnedChats.adapter?.notifyDataSetChanged()
     }
 
     private fun showSessionOptions(session: ChatSession) {
@@ -511,8 +570,8 @@ class MainActivity : AppCompatActivity() {
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showRenameDialog(session)
-                    1 -> { chatDb.pinSession(session.id, !session.pinned); loadSessions() }
-                    2 -> { chatDb.archiveSession(session.id, true); loadSessions() }
+                    1 -> { chatDb.pinSession(session.id, !session.pinned); loadSessions(); Toast.makeText(this, if (!session.pinned) "Pinned" else "Unpinned", Toast.LENGTH_SHORT).show() }
+                    2 -> { chatDb.archiveSession(session.id, true); loadSessions(); Toast.makeText(this, "Archived", Toast.LENGTH_SHORT).show() }
                     3 -> {
                         AlertDialog.Builder(this)
                             .setTitle("Delete chat?")
@@ -520,6 +579,7 @@ class MainActivity : AppCompatActivity() {
                             .setPositiveButton("Delete") { _, _ ->
                                 chatDb.deleteSession(session.id)
                                 loadSessions()
+                                Toast.makeText(this, "Deleted", Toast.LENGTH_SHORT).show()
                                 if (currentSessionId == session.id) startNewChat(true)
                             }
                             .setNegativeButton("Cancel", null)
@@ -642,16 +702,60 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private var pendingAttachmentUri: Uri? = null
-    private var pendingAttachmentName: String? = null
+    private val pendingAttachments = mutableListOf<Pair<Uri, String>>()
 
     private fun handleFileUpload(uri: Uri) {
         val fileName = getFileName(uri) ?: "uploaded_file"
-        pendingAttachmentUri = uri
-        pendingAttachmentName = fileName
-        // Show the attachment name in the input field
-        etInput.hint = "Attached: $fileName (type message or send directly)"
+        pendingAttachments.add(uri to fileName)
+        updateAttachmentPreview()
         Toast.makeText(this, "Attached: $fileName", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateAttachmentPreview() {
+        val container = findViewById<LinearLayout>(R.id.attachmentPreviewContainer)
+        val list = findViewById<LinearLayout>(R.id.attachmentList)
+        list.removeAllViews()
+        
+        if (pendingAttachments.isEmpty()) {
+            container.visibility = View.GONE
+            etInput.hint = "Message SHS Leo..."
+            return
+        }
+        
+        container.visibility = View.VISIBLE
+        etInput.hint = "Type message or send attachments directly..."
+        
+        for ((index, pair) in pendingAttachments.withIndex()) {
+            val (uri, name) = pair
+            val view = layoutInflater.inflate(R.layout.item_attachment, list, false)
+            val imgPreview = view.findViewById<ImageView>(R.id.imgPreview)
+            val fileLayout = view.findViewById<LinearLayout>(R.id.fileLayout)
+            val tvFileName = view.findViewById<TextView>(R.id.tvFileName)
+            val btnRemove = view.findViewById<ImageButton>(R.id.btnRemove)
+            
+            tvFileName.text = name
+            
+            // Check if it's an image
+            val isImage = name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".gif") || name.endsWith(".webp")
+            if (isImage) {
+                try {
+                    val bitmap = android.provider.MediaStore.Images.Media.getBitmap(contentResolver, uri)
+                    imgPreview.setImageBitmap(bitmap)
+                    imgPreview.visibility = View.VISIBLE
+                    fileLayout.visibility = View.GONE
+                } catch (e: Exception) {
+                    // Not an image or error — show as file
+                }
+            }
+            
+            val removeIndex = index
+            btnRemove.setOnClickListener {
+                pendingAttachments.removeAt(removeIndex)
+                updateAttachmentPreview()
+            }
+            
+            list.addView(view)
+        }
     }
 
     private fun getFileName(uri: Uri): String? {
